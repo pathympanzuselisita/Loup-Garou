@@ -12,6 +12,19 @@ avant la fin du temps.
    - Ou à la main : `npm install` puis `npm start`
 3. Ouvre **http://localhost:3000** dans ton navigateur (Chrome, Edge ou Firefox).
 
+## Comptes et niveaux
+
+Pour jouer, il faut un **compte** (pseudo + mot de passe). Les mots de passe sont stockés
+hachés (scrypt), jamais en clair. Chaque partie rapporte de l'**XP** : +20 pour avoir joué,
++40 en cas de victoire de son camp, +10 si on est encore en vie à la fin. Il faut 100 XP pour
+passer au niveau 2, puis 50 de plus à chaque niveau. Les skins (débloqués par niveau) se
+déclarent dans `accounts.js` (liste `SKINS`).
+
+- **En local**, les comptes sont enregistrés dans `data/accounts.json`.
+- **En ligne**, il faut une base PostgreSQL : renseigner sa connexion dans la variable
+  d'environnement `DATABASE_URL` (par exemple une base gratuite Neon, https://neon.tech).
+  Sans elle, sur Render, les comptes sont effacés à chaque redémarrage.
+
 ## Salons
 
 Sur l'écran d'accueil : **« Créer une partie »** ouvre un nouveau salon avec un **code de 4 lettres**

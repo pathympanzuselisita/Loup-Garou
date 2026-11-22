@@ -103,3 +103,17 @@ kbd { background: #222a38; border: 1px solid #3a4150; border-radius: 4px; paddin
 #panelBody .roomcode { background: #0f141d; border-radius: 8px; padding: 8px 10px; }
 #panelBody .roomcode b { font-size: 20px; letter-spacing: 4px; color: #f0c36b; }
 #roomBtn { background: #2c3a5c; }
+
+#authBox, #homeBox, #authForm { display: flex; flex-direction: column; gap: 10px; }
+.tabs { display: flex; gap: 6px; background: #0f141d; padding: 4px; border-radius: 10px; }
+.tab { flex: 1; background: transparent; color: #9aa4b5; }
+.tab.on { background: #2c3a5c; color: #fff; }
+button.small { padding: 4px 8px; font-size: 12px; background: #2c3242; }
+.account { background: #0f141d; border: 1px solid #2b3446; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.acc-top { display: flex; align-items: center; gap: 8px; }
+.acc-name { font-weight: 700; font-size: 17px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.acc-lv { background: #c79a2b; color: #111; font-weight: 800; border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+.xpbar { height: 10px; background: #222a38; border-radius: 6px; overflow: hidden; }
+.xpbar > div { height: 100%; width: 0; background: linear-gradient(90deg, #c79a2b, #f0c36b); transition: width .5s; }
+.acc-stats { font-size: 12px; color: #9aa4b5; }
+#plist .lv { font-size: 11px; background: #2c3a5c; border-radius: 999px; padding: 0 6px; color: #f0c36b; font-weight: 700; flex: none; }

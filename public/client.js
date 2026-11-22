@@ -4,9 +4,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const socket = io();
-let myId = null;
-try { myId = localStorage.getItem('lg-id'); } catch (e) { /* ignore */ }
-if (!myId) { myId = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); try { localStorage.setItem('lg-id', myId); } catch (e) { /* ignore */ } }
+let myId = null;      // = identifiant du compte
+let account = null;   // { id, name, level, xp, into, need, games, wins, skin }
+let token = null;
+try { token = localStorage.getItem('lg-token'); } catch (e) { /* ignore */ }
 
 let CFG = null;        // infos statiques envoyées par le serveur
 let S = null;          // dernier état reçu
@@ -20,44 +21,96 @@ let joined = false;
 
 // ------------------------------------------------------------ connexion
 if (!window.isSecureContext) $('#secureHint').hidden = false;
-try { $('#nameIn').value = localStorage.getItem('lg-name') || ''; } catch (e) { /* ignore */ }
 // ---- salons : code dans l'URL (?salon=ABCD) pour inviter ses amis
 let roomCode = (new URLSearchParams(location.search).get('salon') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 if (roomCode) {
   $('#codeIn').value = roomCode;
   $('#inviteHint').hidden = false;
-  $('#inviteHint').textContent = `🎟️ Vous êtes invité dans le salon ${roomCode} : entrez votre pseudo puis cliquez sur « Rejoindre ».`;
+  $('#inviteHint').textContent = `🎟️ Vous êtes invité dans le salon ${roomCode} : connectez-vous puis cliquez sur « Rejoindre ».`;
 }
-function loginError(msg) { const el = $('#loginErr'); el.textContent = msg; el.hidden = !msg; }
-function getName() {
-  const name = $('#nameIn').value.trim();
-  if (!name) { loginError('Choisissez d\'abord un pseudo.'); $('#nameIn').focus(); return null; }
-  try { localStorage.setItem('lg-name', name); } catch (e) { /* ignore */ }
-  return name;
+function loginError(msg) { const el = $('#loginErr'); el.textContent = msg || ''; el.hidden = !msg; }
+
+// ---- comptes : connexion / inscription
+let registerMode = false;
+function setMode(reg) {
+  registerMode = reg;
+  $('#tabLogin').classList.toggle('on', !reg); $('#tabRegister').classList.toggle('on', reg);
+  $('#pass2In').hidden = !reg;
+  $('#passIn').autocomplete = reg ? 'new-password' : 'current-password';
+  $('#authBtn').textContent = reg ? 'Créer mon compte' : 'Se connecter';
+  loginError('');
 }
+$('#tabLogin').onclick = () => setMode(false);
+$('#tabRegister').onclick = () => setMode(true);
+$('#authForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('#userIn').value.trim(), password = $('#passIn').value;
+  if (!name || !password) return loginError('Entrez votre pseudo et votre mot de passe.');
+  if (registerMode && password !== $('#pass2In').value) return loginError('Les deux mots de passe ne correspondent pas.');
+  $('#authBtn').disabled = true;
+  socket.emit(registerMode ? 'register' : 'login', { name, password }, res => {
+    $('#authBtn').disabled = false;
+    if (!res || res.error) return loginError(res ? res.error : 'Erreur du serveur.');
+    token = res.token;
+    try { localStorage.setItem('lg-token', token); } catch (err) { /* ignore */ }
+    $('#passIn').value = $('#pass2In').value = '';
+    signedIn(res.user);
+  });
+});
+function showAuth() { $('#authBox').hidden = false; $('#homeBox').hidden = true; setTimeout(() => $('#userIn').focus(), 50); }
+function renderAccount() {
+  if (!account) return;
+  $('#accName').textContent = '👤 ' + account.name;
+  $('#accLv').textContent = 'Niveau ' + account.level;
+  $('#accXp').style.width = Math.round(account.into / account.need * 100) + '%';
+  $('#accStats').textContent = `${account.into} / ${account.need} XP vers le niveau ${account.level + 1} · ${account.games} partie${account.games > 1 ? 's' : ''} · ${account.wins} victoire${account.wins > 1 ? 's' : ''}`;
+}
+function signedIn(user) {
+  account = user; myId = user.id;
+  $('#authBox').hidden = true; $('#homeBox').hidden = false;
+  loginError('');
+  renderAccount();
+}
+socket.on('account', user => { account = user; renderAccount(); });
+$('#logoutBtn').onclick = () => {
+  socket.emit('logout', token, () => {});
+  token = null; account = null;
+  try { localStorage.removeItem('lg-token'); } catch (e) { /* ignore */ }
+  showAuth();
+};
+
 function join(code) {
-  const name = getName();
-  if (!name) return;
+  if (!account) return showAuth();
   code = String(code || '').toUpperCase().replace(/[^A-Z]/g, '');
   if (code.length !== 4) { loginError('Le code d\'un salon fait 4 lettres.'); return $('#codeIn').focus(); }
   loginError('');
   roomCode = code;
   joined = true;
-  socket.emit('join', { id: myId, name, room: code });
+  socket.emit('join', { room: code });
 }
-$('#nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') (roomCode ? join(roomCode) : $('#createBtn').click()); });
 $('#codeIn').addEventListener('keydown', e => { if (e.key === 'Enter') join($('#codeIn').value); });
 $('#codeIn').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); });
 $('#joinBtn').onclick = () => join($('#codeIn').value);
 $('#createBtn').onclick = () => {
-  if (!getName()) return;
   socket.emit('create-room', res => {
     if (!res || res.error) return loginError(res ? res.error : 'Erreur du serveur.');
     join(res.code);
   });
 };
 socket.on('join-error', msg => { joined = false; loginError(msg); });
-socket.on('connect', () => { if (joined) socket.emit('join', { id: myId, name: $('#nameIn').value.trim(), room: roomCode }); });
+// à chaque (re)connexion : on reprend la session, puis le salon si on y était
+socket.on('connect', () => {
+  if (!token) return showAuth();
+  socket.emit('resume', token, res => {
+    if (!res || res.error) {
+      token = null; try { localStorage.removeItem('lg-token'); } catch (e) { /* ignore */ }
+      if (joined) location.reload();
+      return showAuth();
+    }
+    signedIn(res.user);
+    if (joined) socket.emit('join', { room: roomCode });
+  });
+});
 function inviteLink() { return `${location.origin}${location.pathname}?salon=${roomCode}`; }
 $('#roomBtn').onclick = async () => {
   try { await navigator.clipboard.writeText(inviteLink()); $('#roomBtn').textContent = '✅ Lien copié !'; }
@@ -138,7 +191,7 @@ chatIn.addEventListener('keydown', e => {
   e.stopPropagation();
 });
 window.addEventListener('keydown', e => {
-  if (!joined || document.activeElement === $('#nameIn')) return;
+  if (!joined || !$('#login').hidden) return;
   if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
   if (e.key === 'Enter') { chatIn.focus(); e.preventDefault(); return; }
   if (e.key.toLowerCase() === 'e' && !e.repeat) togglePeek();
@@ -369,7 +422,7 @@ function renderList() {
     const r = p.role && R(p.role);
     const badges = (p.id === S.hostId ? '👑' : '') + (lovers.includes(p.id) ? '💘' : '') + (p.id === myId ? ' (vous)' : '');
     return `<li class="${p.alive ? '' : 'dead'} ${p.connected ? '' : 'off'}"><span class="dot" style="background:${esc(p.color)}"></span>
-      <span class="nm">${esc(p.name)} ${badges}</span><span class="rl">${r && S.phase !== 'lobby' ? r.icon + ' ' + esc(r.name) : ''}</span></li>`;
+      <span class="lv">Nv ${p.level || 1}</span><span class="nm">${esc(p.name)} ${badges}</span><span class="rl">${r && S.phase !== 'lobby' ? r.icon + ' ' + esc(r.name) : ''}</span></li>`;
   }).join('');
   $('#pcount').textContent = `(${S.players.filter(p => p.alive && !p.spectator).length} en vie)`;
   if (html !== lastListKey) { lastListKey = html; $('#plist').innerHTML = html; }
@@ -428,7 +481,7 @@ function frame(t) {
     if (!(visible.has(p.id) || p.id === myId)) continue;
     const pos = posOf(p.id) || me;
     const b = bubbles.get(p.id);
-    entities.push({ id: p.id, name: p.name, color: p.color, alive: p.alive, role: S.phase === 'lobby' ? null : p.role, x: pos.x, y: pos.y,
+    entities.push({ id: p.id, name: `${p.name} · Nv ${p.level || 1}`, color: p.color, alive: p.alive, role: S.phase === 'lobby' ? null : p.role, x: pos.x, y: pos.y,
       isMe: p.id === myId, speaking: (voice.levels.get(p.id) || 0) > 0.04, bubble: b && b.until > now ? b.text : null,
       votes: S.phase === 'vote' ? Object.values(S.votes || {}).filter(t => t === p.id).length : 0 });
   }

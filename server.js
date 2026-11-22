@@ -10,6 +10,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Server } = require('socket.io');
+const { openAccounts } = require('./accounts');
+let accounts = null; // ouvert au démarrage
 
 const PORT = +process.env.PORT || 3000;
 const HTTPS_PORT = +process.env.HTTPS_PORT || 3443;
@@ -196,7 +198,7 @@ function viewFor(p) {
     me: { id: p.id, role: p.role, alive: p.alive, lover: p.lover, spectator: p.spectator },
     players: all().map(q => ({
       id: q.id, name: q.name, color: q.color, alive: q.alive, connected: q.connected,
-      spectator: q.spectator, house: q.house, role: knownRole(p, q),
+      spectator: q.spectator, house: q.house, role: knownRole(p, q), level: q.level || 1,
     })),
   };
   const seeAll = game.phase === 'end' || !p.alive;
@@ -418,6 +420,20 @@ function endGame(winner) {
   announce(T[winner], recap);
   sys(T[winner], 'phase');
   broadcastState();
+  // XP : chaque joueur de la partie gagne de l'expérience
+  for (const p of all()) {
+    if (!p.role || p.spectator) continue;
+    const won = winner === 'village' ? ROLE_INFO[p.role].team === 'village'
+      : winner === 'loups' ? isWolf(p) : winner === 'amoureux' ? !!(game.lovers && game.lovers.includes(p.id)) : false;
+    accounts.reward(p.id, { won, survived: p.alive }).then(r => {
+      if (!r) return;
+      p.level = r.user.level;
+      sys(`⭐ +${r.gained} XP${won ? ' (victoire !)' : ''} — niveau ${r.user.level} (${r.user.into}/${r.user.need} XP)`, 'seer', p.id);
+      if (r.levelUp) announce(`🎉 Niveau ${r.user.level} !`, `Bravo ${p.name}, vous passez au niveau ${r.user.level} !`, p.id);
+      if (p.connected) io.to(p.socketId).emit('account', r.user);
+      broadcastState();
+    }).catch(e => console.error('XP', e.message));
+  }
 }
 function backToLobby() {
   clearTimer();
@@ -436,19 +452,18 @@ function attach(socket, joinData) {
   socket.join(code);
   lastActive = Date.now();
 
-  const onJoin = ({ id, name } = {}) => {
-    id = String(id || '').slice(0, 40);
-    name = String(name || '').trim().slice(0, 18) || 'Anonyme';
-    if (!id) return;
+  const onJoin = () => {
+    const user = socket.data.user; // compte connecté
+    const id = user.id, name = user.name;
     me = get(id);
     if (me) {
       if (me.connected && me.socketId !== socket.id) io.sockets.sockets.get(me.socketId)?.disconnect(true);
-      me.name = me.role ? me.name : name;
+      me.level = user.level;
     } else {
       const used = new Set(all().map(p => p.color));
       me = { id, name, color: COLORS.find(c => !used.has(c)) || COLORS[game.players.size % COLORS.length],
         x: CENTER.x + rnd(-120, 120), y: CENTER.y + rnd(-120, 120), alive: true, role: null,
-        house: null, lover: null, seen: {}, spectator: false, voice: false };
+        house: null, lover: null, seen: {}, spectator: false, voice: false, level: user.level };
       if (game.phase !== 'lobby') { me.alive = false; me.spectator = true; me.role = 'spectateur'; }
       game.players.set(id, me);
       sys(`${name} rejoint le village.`);
@@ -603,7 +618,7 @@ function attach(socket, joinData) {
     broadcastState();
   });
 
-  onJoin(joinData);
+  onJoin();
 }
 
 // position des joueurs visibles, 15 fois par seconde
@@ -677,7 +692,21 @@ return { code, attach, destroy, connectedCount, get lastActive() { return lastAc
 
 // connexion : créer un salon ou en rejoindre un avec son code
 io.on('connection', socket => {
+  const ip = String(socket.handshake.headers['x-forwarded-for'] || socket.handshake.address || '').split(',')[0].trim();
+  const reply = (ack, p) => p.then(r => typeof ack === 'function' && ack(r)).catch(e => typeof ack === 'function' && ack({ error: e.message || 'Erreur du serveur.' }));
+  const signedIn = res => { socket.data.user = res.user; if (res.token) socket.data.token = res.token; return res; };
+  // ---- comptes
+  socket.on('register', ({ name, password } = {}, ack) => reply(ack, accounts.register(name, password, ip).then(signedIn)));
+  socket.on('login', ({ name, password } = {}, ack) => reply(ack, accounts.login(name, password, ip).then(signedIn)));
+  socket.on('resume', (token, ack) => reply(ack, accounts.resume(token).then(user => {
+    if (!user) return { error: 'Session expirée, reconnectez-vous.' };
+    return signedIn({ user });
+  })));
+  socket.on('logout', (token, ack) => reply(ack, accounts.logout(token).then(() => { socket.data.user = null; return { ok: true }; })));
+
+  // ---- salons (réservés aux joueurs connectés)
   socket.on('create-room', ack => {
+    if (!socket.data.user) return typeof ack === 'function' && ack({ error: 'Connectez-vous d\'abord.' });
     if (rooms.size >= 500) return typeof ack === 'function' && ack({ error: 'Trop de salons ouverts, réessayez plus tard.' });
     const code = newCode();
     rooms.set(code, createRoom(code));
@@ -686,6 +715,7 @@ io.on('connection', socket => {
   });
   socket.on('join', (data = {}) => {
     if (socket.data.room) return;
+    if (!socket.data.user) return socket.emit('join-error', 'Connectez-vous d\'abord.');
     const code = String(data.room || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
     const room = rooms.get(code);
     if (!room) return socket.emit('join-error', `Le salon « ${code || '?'} » n'existe pas (ou a fermé). Vérifiez le code ou créez une nouvelle partie.`);
@@ -733,7 +763,13 @@ async function startHttps() {
   }
 }
 
-httpServer.listen(PORT, async () => {
+(async () => {
+  accounts = await openAccounts();
+  console.log(`  Comptes joueurs : ${accounts.kind}`);
+  if (!process.env.DATABASE_URL && process.env.RENDER) console.warn('  ⚠ Pas de DATABASE_URL : les comptes seront effacés à chaque redémarrage du serveur !');
+  httpServer.listen(PORT, onListen);
+})().catch(e => { console.error('Impossible d\'ouvrir la base des comptes :', e.message); process.exit(1); });
+async function onListen() {
   const okHttps = await startHttps();
   const ips = lanIPs();
   console.log('\n  🐺  Les Loups de Brumeval — serveur lancé !\n');
@@ -741,4 +777,5 @@ httpServer.listen(PORT, async () => {
   if (okHttps) for (const ip of ips) console.log(`  Amis sur le même réseau : https://${ip}:${HTTPS_PORT}   (accepter l'avertissement de sécurité)`);
   else for (const ip of ips) console.log(`  Amis sur le même réseau : http://${ip}:${PORT}   (micro indisponible sans HTTPS)`);
   console.log('\n  Ctrl+C pour arrêter.\n');
-});
+}
+

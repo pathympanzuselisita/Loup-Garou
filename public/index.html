@@ -12,12 +12,29 @@
     <h1>🐺 Les Loups de Brumeval</h1>
     <p class="sub">Loups-garous multijoueur · chat de proximité · nuits chronométrées</p>
     <p id="inviteHint" class="invite" hidden></p>
-    <input id="nameIn" maxlength="18" placeholder="Votre pseudo" autocomplete="off">
-    <button id="createBtn" class="primary">🏡 Créer une partie</button>
-    <div class="or"><span>ou rejoindre avec un code</span></div>
-    <div class="joinrow">
-      <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
-      <button id="joinBtn">Rejoindre</button>
+    <!-- connexion / inscription -->
+    <div id="authBox" hidden>
+      <div class="tabs"><button id="tabLogin" class="tab on">Connexion</button><button id="tabRegister" class="tab">Créer un compte</button></div>
+      <form id="authForm" autocomplete="on">
+        <input id="userIn" name="username" maxlength="16" placeholder="Pseudo" autocomplete="username" spellcheck="false">
+        <input id="passIn" name="password" type="password" maxlength="100" placeholder="Mot de passe" autocomplete="current-password">
+        <input id="pass2In" type="password" maxlength="100" placeholder="Confirmer le mot de passe" autocomplete="new-password" hidden>
+        <button id="authBtn" class="primary" type="submit">Se connecter</button>
+      </form>
+    </div>
+    <!-- accueil une fois connecté -->
+    <div id="homeBox" hidden>
+      <div class="account">
+        <div class="acc-top"><span class="acc-name" id="accName"></span><span class="acc-lv" id="accLv"></span><button id="logoutBtn" class="small" type="button">Se déconnecter</button></div>
+        <div class="xpbar"><div id="accXp"></div></div>
+        <div class="acc-stats" id="accStats"></div>
+      </div>
+      <button id="createBtn" class="primary">🏡 Créer une partie</button>
+      <div class="or"><span>ou rejoindre avec un code</span></div>
+      <div class="joinrow">
+        <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+        <button id="joinBtn">Rejoindre</button>
+      </div>
     </div>
     <p id="loginErr" class="err" hidden></p>
     <p id="secureHint" class="hint" hidden>⚠️ Le micro ne fonctionne qu'en <b>https</b> (ou sur localhost). Utilisez l'adresse https affichée par le serveur.</p>
@@ -28,7 +45,7 @@
         <li><kbd>Entrée</kbd> : écrire dans le chat — seuls les joueurs proches vous entendent</li>
         <li>🎙️ Activez le vocal : le volume dépend de la distance</li>
         <li>La nuit, chaque rôle doit agir <b>avant la fin du chrono</b>, sinon son action est perdue</li>
-        <li>Les loups se retrouvent à la tanière et parlent entre eux ; les villageois dorment</li>
+        <li>Chaque partie rapporte de l'XP : montez de niveau pour débloquer des skins (bientôt !)</li>
       </ul>
     </div>
   </div>
