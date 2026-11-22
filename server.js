@@ -25,12 +25,15 @@ const DEN = { x: 330, y: 280 };          // tanière des loups
 const VILLAGE_RADIUS = 620;               // rayon du cercle de maisons
 const HOUSE_COUNT = 16;                  // maisons du village (= joueurs max)
 const HOUSE_RING = { rx: VILLAGE_RADIUS, ry: VILLAGE_RADIUS };
-// maisons fixes, disposées en cercle, porte tournée vers la place
-const HOUSES = Array.from({ length: HOUSE_COUNT }, (_, i) => {
-  const a = -Math.PI / 2 + i * 2 * Math.PI / HOUSE_COUNT;
-  const x = Math.round(CENTER.x + Math.cos(a) * VILLAGE_RADIUS), y = Math.round(CENTER.y + Math.sin(a) * VILLAGE_RADIUS);
-  return { i, x, y, face: Math.atan2(CENTER.y - y, CENTER.x - x) };
-});
+// maisons disposées en cercle (une par joueur), porte tournée vers la place
+function layoutHouses(n) {
+  n = Math.max(1, Math.min(HOUSE_COUNT, n | 0));
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+    const x = Math.round(CENTER.x + Math.cos(a) * VILLAGE_RADIUS), y = Math.round(CENTER.y + Math.sin(a) * VILLAGE_RADIUS);
+    return { i, x, y, face: Math.atan2(CENTER.y - y, CENTER.x - x) };
+  });
+}
 const COUNCIL_RADIUS = 150;              // cercle du conseil (vote) sur la place
 // chaque joueur a sa place dans le cercle, du côté de sa maison
 const seatOf = h => { const a = Math.atan2(h.y - CENTER.y, h.x - CENTER.x); return { x: CENTER.x + Math.cos(a) * COUNCIL_RADIUS, y: CENTER.y + Math.sin(a) * COUNCIL_RADIUS }; };
@@ -93,6 +96,7 @@ function createRoom(code) {
 let lastActive = Date.now();
 // ----------------------------------------------------------------- état
 const game = {
+  houses: layoutHouses(1),
   phase: 'lobby', // lobby | night | witch | hunter | day | vote | end
   players: new Map(),
   hostId: null,
@@ -215,7 +219,7 @@ function knownRole(viewer, q) {
 }
 function viewFor(p) {
   const v = {
-    phase: game.phase, day: game.day, timerEnd: game.timerEnd, serverNow: Date.now(),
+    phase: game.phase, day: game.day, timerEnd: game.timerEnd, houses: game.houses, serverNow: Date.now(),
     hostId: game.hostId, settings: game.settings, winner: game.winner,
     me: { id: p.id, role: p.role, alive: p.alive, lover: p.lover, spectator: p.spectator },
     players: all().map(q => ({
@@ -242,6 +246,8 @@ function viewFor(p) {
 }
 let stateQueued = false;
 function broadcastState() {
+  // en salle d'attente, le village a une maison par joueur présent
+  if (game.phase === 'lobby') { const n = Math.max(1, all().length); if (game.houses.length !== n) game.houses = layoutHouses(n); }
   if (stateQueued) return;
   stateQueued = true;
   setImmediate(() => {
@@ -267,6 +273,7 @@ function startGame(force = null) {
   const players = shuffled.slice(0, HOUSE_COUNT);
   for (const p of shuffled.slice(HOUSE_COUNT)) Object.assign(p, { alive: false, spectator: true, role: 'spectateur', house: null });
   if (players.length < 3) return sys('Il faut au moins 3 joueurs pour commencer.', 'warn', game.hostId);
+  game.houses = layoutHouses(players.length); // autant de maisons que de joueurs
   const roles = buildRoles(players.length);
   // mode développeur : on peut imposer son propre rôle
   if (force && force.role && ROLE_INFO[force.role] && force.role !== 'spectateur') {
@@ -281,7 +288,7 @@ function startGame(force = null) {
     }
   }
   players.forEach((p, i) => {
-    p.house = HOUSES[Math.round(i * HOUSE_COUNT / players.length) % HOUSE_COUNT];
+    p.house = game.houses[i];
     p.role = roles[i]; p.alive = true; p.spectator = false; p.lover = null; p.seen = {};
   });
   Object.assign(game, { day: 0, potions: { life: true, death: true }, lovers: null,
@@ -532,7 +539,7 @@ function attach(socket, joinData) {
     me.voice = false;
     if (!user.bot && (!game.hostId || !get(game.hostId)?.connected || get(game.hostId)?.bot)) game.hostId = id;
     socket.emit('welcome', { id, room: code, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
-      ring: HOUSE_RING, houses: HOUSES, hearRadius: HEAR_RADIUS, councilRadius: COUNCIL_RADIUS, peek: { range: PEEK_RANGE, half: PEEK_HALF_ANGLE } });
+      ring: HOUSE_RING, houses: game.houses, hearRadius: HEAR_RADIUS, councilRadius: COUNCIL_RADIUS, peek: { range: PEEK_RANGE, half: PEEK_HALF_ANGLE } });
     socket.emit('teleport', { x: me.x, y: me.y });
     broadcastState();
     // partie de test du développeur : on ajoute les bots et on lance
@@ -590,7 +597,7 @@ function attach(socket, joinData) {
   // les loups griffent la maison de leur victime (il faut être tout près)
   socket.on('scratch', guard(i => {
     if (!nightActor('loup') || step() !== 'loups') return;
-    const h = HOUSES[i];
+    const h = game.houses[i];
     const p = h && alive().find(q => q.house === h);
     if (!p || isWolf(p)) return;
     if (dist(me, h) > 120) return sys('Approchez-vous de la maison pour la griffer.', 'warn', me.id);
@@ -607,7 +614,7 @@ function attach(socket, joinData) {
   // la Voyante ouvre la boîte aux lettres d'une maison : elle y lit le rôle de l'habitant
   socket.on('seer-mailbox', guard(i => {
     if (!nightActor('voyante') || step() !== 'voyante' || game.night.seerDone) return;
-    const h = HOUSES[i];
+    const h = game.houses[i];
     const p = h && all().find(q => q.house === h && q.alive && q.id !== me.id);
     if (!p) return sys('Cette boîte aux lettres est vide.', 'warn', me.id);
     const mb = mailboxPos(h);

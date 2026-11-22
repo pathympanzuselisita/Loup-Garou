@@ -157,13 +157,17 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   // dalle du conseil : anneau de pierre claire
   flat(new THREE.RingGeometry(CR - 1.1, CR + 1.1, 64), new THREE.MeshStandardMaterial({ color: '#b9ad95', roughness: .9 }), 0.05);
   flat(new THREE.RingGeometry(CR + 1.1, CR + 1.35, 64), new THREE.MeshStandardMaterial({ color: '#5d5346', roughness: .9 }), 0.055);
-  // un siège de pierre derrière chaque place (une par maison)
+  // un siège de pierre derrière chaque place (une par maison) — reconstruits avec les maisons
   const seatGeo = new THREE.CylinderGeometry(.55, .65, .6, 10);
-  for (const h of cfg.houses) {
-    const a = Math.atan2(h.y - cfg.center.y, h.x - cfg.center.x), r = CR + 1.5;
-    const st = new THREE.Mesh(seatGeo, stoneMat); st.position.set(C.x + Math.cos(a) * r, .3, C.z + Math.sin(a) * r);
-    st.castShadow = true; st.receiveShadow = true; scene.add(st);
-    colliders.push({ x: cfg.center.x + Math.cos(a) * r / SC, y: cfg.center.y + Math.sin(a) * r / SC, r: 14 });
+  const seatGroup = new THREE.Group(); scene.add(seatGroup);
+  function buildSeats(list) {
+    seatGroup.clear();
+    for (const h of list) {
+      const a = Math.atan2(h.y - cfg.center.y, h.x - cfg.center.x), r = CR + 1.5;
+      const st = new THREE.Mesh(seatGeo, stoneMat); st.position.set(C.x + Math.cos(a) * r, .3, C.z + Math.sin(a) * r);
+      st.castShadow = true; st.receiveShadow = true; seatGroup.add(st);
+      colliders.push({ x: cfg.center.x + Math.cos(a) * r / SC, y: cfg.center.y + Math.sin(a) * r / SC, r: 14, dyn: true });
+    }
   }
   // feu de camp au centre
   const fire = new THREE.Group(); fire.position.copy(C); scene.add(fire);
@@ -217,12 +221,6 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
       (rand() < .6 ? pines : oaks).push({ x, y, s: .8 + rand() * .7, r: rand() * 6.28 });
       colliders.push({ x, y, r: 16 });
     }
-    // quelques arbres décoratifs entre les maisons
-    for (let i = 0; i < cfg.houses.length; i++) {
-      const a = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / cfg.houses.length, rr = cfg.ring.rx + 40;
-      const x = cfg.center.x + Math.cos(a) * rr, y = cfg.center.y + Math.sin(a) * rr;
-      oaks.push({ x, y, s: .7 + rand() * .3, r: rand() * 6.28 }); colliders.push({ x, y, r: 16 });
-    }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     const inst = (geo, mat, list, y, sy = 1) => {
       const im = new THREE.InstancedMesh(geo, mat, list.length); im.castShadow = true; im.receiveShadow = true;
@@ -272,7 +270,17 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   const CURTAINS = ['#8e2b2b', '#2f4f7a', '#3f6b3a', '#7a4a8c', '#a0662a', '#5b5b5b'];
   // fenêtres de façade (x local) : [0] = à gauche vue de l'intérieur, [1] = à droite
   const WIN_X = [1.75, -1.75];
-  const houses = cfg.houses.map((h, i) => buildHouse(h, i));
+  // maisons : une par joueur, reconstruites quand leur nombre change
+  let houses = [], houseList = [], houseKey = '';
+  function setHouses(list) {
+    const key = list.map(h => `${h.x},${h.y}`).join(';');
+    if (key === houseKey) return;
+    houseKey = key; houseList = list;
+    for (const h of houses) { scene.remove(h.g); h.g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    for (let k = colliders.length - 1; k >= 0; k--) if (colliders[k].dyn) colliders.splice(k, 1);
+    houses = list.map((h, i) => buildHouse(h, i));
+    buildSeats(list);
+  }
   function buildHouse(h, i) {
     const g = new THREE.Group();
     const p = toW(h.x, h.y); g.position.copy(p);
@@ -400,9 +408,9 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     plate.position.set(MB.x, 1.24, MB.z + .36); g.add(plate);
     const label = new THREE.Group(); label.position.set(MB.x, 1.85, MB.z); g.add(label);
     scene.add(g);
-    colliders.push({ x: h.x, y: h.y, r: 62, house: i });
+    colliders.push({ x: h.x, y: h.y, r: 62, house: i, dyn: true });
     const sf = Math.sin(h.face), cf = Math.cos(h.face);
-    colliders.push({ x: h.x + (MB.x * sf + MB.z * cf) / SC, y: h.y + (-MB.x * cf + MB.z * sf) / SC, r: 12 });
+    colliders.push({ x: h.x + (MB.x * sf + MB.z * cf) / SC, y: h.y + (-MB.x * cf + MB.z * sf) / SC, r: 12, dyn: true });
     return { g, claws, roof, hinge, windows, curtainMat, doorMat, sheet, label, labelKey: '', plateCv, plateTex, flag, owner: null, doorAngle: 0, doorTarget: 0, h, d, t };
   }
 
@@ -545,7 +553,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     drag = null;
   });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
-  canvas.addEventListener('wheel', e => { cam.dist = Math.max(6, Math.min(40, cam.dist * (e.deltaY > 0 ? 1.1 : 0.9))); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('wheel', e => { cam.dist = Math.max(6, Math.min(80, cam.dist * (e.deltaY > 0 ? 1.1 : 0.9))); e.preventDefault(); }, { passive: false });
 
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -740,7 +748,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   // place la caméra côté place du village, face à la maison la plus proche
   function faceHouseFrom(x, y) {
     let best = null, bd = 1e9;
-    for (const h of cfg.houses) { const d = Math.hypot(x - h.x, y - h.y); if (d < bd) { bd = d; best = h; } }
+    for (const h of houseList) { const d = Math.hypot(x - h.x, y - h.y); if (d < bd) { bd = d; best = h; } }
     if (best && bd < 160) cam.yaw = Math.atan2(Math.cos(best.face), Math.sin(best.face));
   }
   function playEmote(id, type) { const c = chars.get(id); if (c && POSES[type]) c.emote = { type, start: performance.now() }; }
@@ -756,5 +764,6 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   function faceCenterFrom(x, y) { cam.yaw = Math.atan2(x - cfg.center.x, y - cfg.center.y); }
   // demi-angle horizontal du champ de la caméra (pour l'ouverture du rideau à l'écran)
   function hHalfFov() { return Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect); }
-  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, openMailbox, playEmote, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
+  setHouses(cfg.houses || []);
+  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, openMailbox, playEmote, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, setHouses };
 }

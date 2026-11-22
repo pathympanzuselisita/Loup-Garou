@@ -150,6 +150,7 @@ socket.on('state', st => {
   const prevPhase = S && S.phase;
   S = st;
   clockOffset = st.serverNow - Date.now();
+  if (scene3d && st.houses) scene3d.setHouses(st.houses); // une maison par joueur
   if (prevPhase !== st.phase) { cupidSel = []; witchSel = { save: false, kill: null }; }
   renderAll();
 });

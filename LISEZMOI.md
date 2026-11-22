@@ -1,6 +1,6 @@
 # 🐺 Les Loups de Brumeval
 
-Jeu de loups-garous multijoueur **en 3D** dans le navigateur : un village de 16 maisons
+Jeu de loups-garous multijoueur **en 3D** dans le navigateur : un village avec **une maison par joueur** (16 max)
 disposées en cercle autour de la place du conseil et de son feu de camp, la forêt et la tanière des loups.
 **Chat de proximité** (texte + voix) et **nuits chronométrées** : chaque rôle doit faire son action
 avant la fin du temps.
