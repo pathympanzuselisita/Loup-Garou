@@ -157,6 +157,7 @@ socket.on('chat', m => {
   addLog(`<b style="color:${esc(m.color)}">${m.ghost ? '👻 ' : ''}${m.wolf ? '🐺 ' : ''}${esc(m.name)}</b> : ${esc(m.text)}`, m.ghost ? 'ghost' : m.wolf ? 'wolf' : '');
   bubbles.set(m.from, { text: m.text, until: Date.now() + 4500 + m.text.length * 50 });
 });
+socket.on('emote', m => { if (scene3d) scene3d.playEmote(m.id, m.type); });
 socket.on('mailbox-open', m => { const r = R(m.role); if (scene3d) scene3d.openMailbox(m.i, `${m.name} : ${r ? r.icon + ' ' + r.name : '?'}`); });
 socket.on('sys', m => addLog(esc(m.text), m.kind === 'warn' ? 'sys warnm' : 'sys ' + m.kind));
 socket.on('announce', m => showModal(m.title, m.text));
@@ -191,10 +192,58 @@ chatIn.addEventListener('keydown', e => {
   } else if (e.key === 'Escape') chatIn.blur();
   e.stopPropagation();
 });
+// ---- mode développeur : Ctrl + Maj + D
+window.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); openDev(); }
+}, true);
+let devOk = false, devCodeMem = '';
+function devError(m) { $('#devErr').textContent = m || ''; $('#devErr').hidden = !m; }
+function openDev() {
+  if (!account) return loginError('Connectez-vous d\'abord pour ouvrir le mode développeur.');
+  $('#devModal').hidden = false; devError('');
+  $('#devAuth').hidden = devOk; $('#devOpts').hidden = !devOk;
+  if (!devOk) setTimeout(() => $('#devCode').focus(), 50);
+  if (CFG_ROLES && !$('#devRole').options[1]) {
+    for (const [k, r] of Object.entries(CFG_ROLES)) if (k !== 'spectateur') $('#devRole').add(new Option(`${r.icon} ${r.name}`, k));
+    $('#devRoles').innerHTML = ['voyante', 'sorciere', 'chasseur', 'cupidon', 'petitefille'].map(k =>
+      `<label><input type="checkbox" data-devrole="${k}" checked> ${CFG_ROLES[k].icon} ${CFG_ROLES[k].name}</label>`).join('');
+  }
+}
+let CFG_ROLES = null;
+socket.on('roles-info', r => { CFG_ROLES = r; });
+$('#devClose').onclick = () => { $('#devModal').hidden = true; };
+$('#devCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#devAuthBtn').click(); e.stopPropagation(); });
+$('#devAuthBtn').onclick = () => {
+  const code = $('#devCode').value;
+  socket.emit('dev-auth', code, res => {
+    if (!res || res.error) return devError(res ? res.error : 'Erreur.');
+    devOk = true; devCodeMem = code; $('#devCode').value = '';
+    openDev();
+  });
+};
+$('#devGo').onclick = () => {
+  const roles = {};
+  document.querySelectorAll('[data-devrole]').forEach(c => { roles[c.dataset.devrole] = c.checked; });
+  socket.emit('dev-create', { bots: +$('#devBots').value, role: $('#devRole').value, wolves: +$('#devWolves').value, roles,
+    turn: +$('#devTurn').value, day: +$('#devDay').value, vote: +$('#devVote').value }, res => {
+    if (!res || res.error) return devError(res ? res.error : 'Erreur.');
+    $('#devModal').hidden = true;
+    if (joined) { location.href = `${location.pathname}?salon=${res.code}`; return; }
+    join(res.code);
+  });
+};
+socket.on('connect', () => { if (devCodeMem) setTimeout(() => socket.emit('dev-auth', devCodeMem, () => {}), 300); });
+
+// ---- emotes (touches 1 à 5 ou barre en bas)
+const EMOTE_KEYS = { '1': 'up', '2': 'down', '3': 'point', '4': 'middle', '5': 'maybe' };
+function emote(type) { if (joined) socket.emit('emote', type); }
+document.querySelectorAll('#emoteBar [data-emote]').forEach(b => { b.onclick = () => { emote(b.dataset.emote); b.blur(); }; });
+
 window.addEventListener('keydown', e => {
   if (!joined || !$('#login').hidden) return;
   if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
   if (e.key === 'Enter') { chatIn.focus(); e.preventDefault(); return; }
+  if (EMOTE_KEYS[e.key] && !e.repeat && !e.ctrlKey) { emote(EMOTE_KEYS[e.key]); return; }
   if (isGirlNight() && S.step === 'loups' && !e.repeat) { // Petite Fille : Q/A = rideau gauche, D = rideau droit, E/S = refermer
     const k = e.key.toLowerCase();
     if (k === 'q' || k === 'a' || k === 'arrowleft') return openCurtain(0);

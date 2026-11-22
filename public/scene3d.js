@@ -264,6 +264,11 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   // -------------------------------------------------------------- maisons
   const ROOFS = ['#b55a3c', '#6d7a86', '#a8823e', '#8b3b2e', '#566b4a'];
   const WALLS = ['#e3d6b8', '#d8c7a4', '#efe5d0', '#cdb894'];
+  const SHUTTERS = ['#3e6b48', '#2f5d8a', '#8a3b2f', '#6b5a3e', '#4b4f7a', '#7a6a2f'];
+  const glassDark = new THREE.MeshStandardMaterial({ color: '#2b3b4a', roughness: .2 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: '#2a2a2a', metalness: .6, roughness: .4 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: '#3f7d3a', roughness: 1 });
+  const bushMat = new THREE.MeshStandardMaterial({ color: '#356b31', roughness: 1, flatShading: true });
   const CURTAINS = ['#8e2b2b', '#2f4f7a', '#3f6b3a', '#7a4a8c', '#a0662a', '#5b5b5b'];
   // fenêtres de façade (x local) : [0] = à gauche vue de l'intérieur, [1] = à droite
   const WIN_X = [1.75, -1.75];
@@ -328,6 +333,40 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     }
     add(new THREE.BoxGeometry(w + 1, .25, .3), roofMat, 0, .4 + wh + 2.15, 0, roof);
     add(new THREE.BoxGeometry(.6, 1.6, .6), stoneMat, w / 2 - 1.2, .4 + wh + 1.8, -d / 4, roof); // cheminée
+    add(new THREE.BoxGeometry(.78, .14, .78), stoneMat, w / 2 - 1.2, .4 + wh + 2.65, -d / 4, roof);  // chapeau de cheminée
+    // œils-de-bœuf sur les pignons
+    for (const sd of [-1, 1]) {
+      const ow = add(new THREE.CircleGeometry(.32, 16), glassDark, sd * ((w - .1) / 2 + .015), .4 + wh + .75, 0, roof); ow.rotation.y = sd * Math.PI / 2; ow.castShadow = false;
+      const of = add(new THREE.TorusGeometry(.34, .06, 6, 16), beamMat, sd * ((w - .1) / 2 + .03), .4 + wh + .75, 0, roof); of.rotation.y = Math.PI / 2;
+    }
+    // ---- détails de façade
+    const deco = (geo, mat, x, y, z, parent = body) => { const m = add(geo, mat, x, y, z, parent); m.castShadow = false; return m; };
+    // encadrement de porte + auvent sur deux consoles
+    for (const sd of [-1, 1]) deco(new THREE.BoxGeometry(.12, dh + .1, .14), beamMat, sd * (dw / 2 + .06), .4 + dh / 2, d / 2 + .05);
+    deco(new THREE.BoxGeometry(dw + .34, .16, .16), beamMat, 0, .4 + dh + .08, d / 2 + .05);
+    const awn = add(new THREE.BoxGeometry(dw + .9, .1, 1), roofMat, 0, .4 + dh + .52, d / 2 + .42); awn.rotation.x = .38;
+    for (const sd of [-1, 1]) { const br = deco(new THREE.BoxGeometry(.08, .08, .7), beamMat, sd * (dw / 2 + .3), .4 + dh + .25, d / 2 + .3); br.rotation.x = -.6; }
+    // marches en pierre
+    deco(new THREE.BoxGeometry(dw + .7, .2, .45), stoneMat, 0, .1, d / 2 + .42);
+    deco(new THREE.BoxGeometry(dw + .4, .2, .3), stoneMat, 0, .3, d / 2 + .25);
+    // volets, jardinières fleuries
+    const shutterMat = new THREE.MeshStandardMaterial({ color: SHUTTERS[i % SHUTTERS.length], roughness: .8 });
+    const flowerCols = ['#e84a5f', '#ffd166', '#f4f1ea', '#c77dff', '#ff8c42'];
+    for (const wx of WIN_X) {
+      for (const sd of [-1, 1]) {
+        const sh = deco(new THREE.BoxGeometry(.42, WY1 - WY0 + .1, .06), shutterMat, wx + sd * (WW / 2 + .32), .4 + (WY0 + WY1) / 2, d / 2 + .07);
+        for (const yy of [-.25, .25]) deco(new THREE.BoxGeometry(.36, .05, .02), beamMat, 0, yy, .04, sh);
+      }
+      deco(new THREE.BoxGeometry(WW + .25, .2, .25), woodMat, wx, .4 + WY0 - .22, d / 2 + .17);
+      for (let k = 0; k < 4; k++) {
+        deco(new THREE.SphereGeometry(.1, 8, 6), new THREE.MeshStandardMaterial({ color: flowerCols[(i + k) % flowerCols.length] }), wx - .33 + k * .22, .4 + WY0 - .04, d / 2 + .17);
+        deco(new THREE.SphereGeometry(.09, 6, 5), leafMat, wx - .22 + k * .22 - .11, .4 + WY0 - .08, d / 2 + .24);
+      }
+    }
+    // lanterne murale (éteinte) et buissons
+    deco(new THREE.BoxGeometry(.2, .3, .2), metalMat, dw / 2 + .5, .4 + 1.9, d / 2 + .14);
+    deco(new THREE.BoxGeometry(.14, .2, .14), glassDark, dw / 2 + .5, .4 + 1.9, d / 2 + .2);
+    for (const sd of [-1, 1]) { const b = add(new THREE.IcosahedronGeometry(.55, 0), bushMat, sd * (w / 2 - .25), .5, d / 2 + .7); b.scale.y = .8; }
     // porte (pivote sur ses gonds)
     const hinge = new THREE.Group(); hinge.position.set(-dw / 2, .4, d / 2 - t / 2); body.add(hinge);
     const doorMat = new THREE.MeshStandardMaterial({ map: T.wood, color: '#ffffff', roughness: .8 });
@@ -375,6 +414,70 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     ring: new THREE.RingGeometry(.65, .8, 32), shadow: new THREE.CircleGeometry(.5, 16),
   };
   const skinMat = new THREE.MeshStandardMaterial({ color: '#f1c9a5', roughness: .8 });
+
+  // ---------------------------------------------- mains volantes + emotes
+  const HG = { palm: new THREE.BoxGeometry(.24, .22, .1), finger: new THREE.CapsuleGeometry(.036, .11, 3, 6), thumb: new THREE.CapsuleGeometry(.042, .09, 3, 6), cuff: new THREE.CylinderGeometry(.13, .11, .08, 10) };
+  // doigts : [pouce, index, majeur, annulaire, auriculaire] — 1 = tendu, 0 = replié
+  const POSES = {
+    idle:   { f: [.7, .5, .5, .5, .5] },
+    up:     { f: [1, 0, 0, 0, 0], pos: [.75, 1.7, .3], rot: [0, 0, Math.PI / 2] },     // pouce vers le haut
+    down:   { f: [1, 0, 0, 0, 0], pos: [.75, 1.35, .3], rot: [0, 0, -Math.PI / 2] },   // pouce vers le bas
+    point:  { f: [0, 1, 0, 0, 0], pos: [.7, 1.5, .5], rot: [0, -.7, -Math.PI / 2] },  // pointer du doigt (vers l'avant et le côté)
+    middle: { f: [0, 0, 1, 0, 0], pos: [.7, 2.0, .25], rot: [0, Math.PI, 0] },         // doigt d'honneur
+    maybe:  { f: [1, 1, 1, 1, 1], pos: [.72, 1.5, .4], rot: [Math.PI / 2, 0, 0] },     // « bof / peut-être »
+  };
+  const EMOTE_TIME = 2600;
+  function makeHand(side, mat) {
+    const wrist = new THREE.Group(), hand = new THREE.Group(); wrist.add(hand); wrist.scale.setScalar(1.45);
+    const m = (geo, x, y, z, parent) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
+    m(HG.palm, 0, 0, 0, hand);
+    const cuff = m(HG.cuff, 0, -.14, 0, hand);
+    const fingers = [];
+    const th = new THREE.Group(); th.position.set(side * .12, -.03, .02); hand.add(th);
+    const tm = m(HG.thumb, side * .07, 0, 0, th); tm.rotation.z = -side * Math.PI / 2;
+    fingers.push(th);
+    [-.085, -.028, .028, .085].forEach((x, k) => {
+      const pv = new THREE.Group(); pv.position.set(side * -x, .11, 0); hand.add(pv);
+      m(HG.finger, 0, .085 + (k === 1 ? .015 : 0), 0, pv);
+      fingers.push(pv);
+    });
+    return { wrist, hand, fingers, cuff };
+  }
+  function setFingers(H, f, dt) {
+    const k = Math.min(1, dt * 14);
+    H.fingers.forEach((pv, j) => {
+      if (j === 0) { // pouce : se replie devant la paume
+        pv.rotation.y += ((1 - f[0]) * -2.1 * H.side - pv.rotation.y) * k;
+        pv.position.x += (H.side * (.12 - (1 - f[0]) * .07) - pv.position.x) * k;
+      }
+      else pv.rotation.x += ((1 - f[j]) * 1.7 - pv.rotation.x) * k;
+    });
+  }
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3();
+  function updateHands(c, dt, moving) {
+    const t = performance.now();
+    const em = c.emote && t - c.emote.start < EMOTE_TIME ? c.emote : null;
+    if (c.emote && !em) c.emote = null;
+    for (const H of c.hands) {
+      const active = em && H.side === 1;
+      const P = active ? POSES[em.type] : POSES.idle;
+      // position cible
+      const bob = Math.sin(t / 300 + H.side) * .05 + (moving ? Math.sin(c.walk * 1.0 + (H.side > 0 ? 0 : Math.PI)) * .12 : 0);
+      if (active) _v.set(P.pos[0], P.pos[1], P.pos[2]);
+      else _v.set(H.side * .78, .85 + bob, moving ? Math.sin(c.walk + (H.side > 0 ? 0 : Math.PI)) * .18 : .05);
+      // petites animations
+      if (active && em.type === 'point') _v.z += Math.sin(t / 120) * .05;
+      if (active && em.type === 'middle') _v.y += Math.sin(t / 90) * .03;
+      if (active && (em.type === 'up' || em.type === 'down')) _v.y += Math.sin(t / 150) * .04;
+      H.wrist.position.lerp(_v, Math.min(1, dt * 12));
+      // orientation cible
+      if (active) _e.set(P.rot[0], P.rot[1], P.rot[2]); else _e.set(0, 0, Math.PI);
+      _q.setFromEuler(_e);
+      H.hand.quaternion.slerp(_q, Math.min(1, dt * 12));
+      H.wrist.rotation.z = active && em.type === 'maybe' ? Math.sin(t / 110) * .45 : H.wrist.rotation.z * .8;
+      setFingers(H, P.f, dt);
+    }
+  }
   function makeChar(e) {
     const g = new THREE.Group();
     const col = new THREE.Color(e.anon ? '#202026' : e.color);
@@ -386,13 +489,15 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     const body = new THREE.Mesh(charGeo.body, bodyMat); body.position.y = .85; body.castShadow = true; inner.add(body);
     const head = new THREE.Mesh(charGeo.head, headMat); head.position.y = 1.75; head.castShadow = true; inner.add(head);
     for (const s of [-1, 1]) { const ey = new THREE.Mesh(charGeo.eye, eyeMat); ey.position.set(s * .13, 1.8, .31); inner.add(ey); }
+    const handMat = new THREE.MeshStandardMaterial({ color: e.anon ? '#1b1b20' : '#f4f1ea', roughness: .6, transparent: true });
+    const hands = [1, -1].map(side => { const H = makeHand(side, handMat); H.side = side; inner.add(H.wrist); H.wrist.position.set(side * .68, .82, .05); return H; });
     const ears = new THREE.Group(); inner.add(ears);
     for (const s of [-1, 1]) { const ea = new THREE.Mesh(charGeo.ear, new THREE.MeshStandardMaterial({ color: e.anon ? '#202026' : '#5a4a40' })); ea.position.set(s * .22, 2.1, 0); ea.rotation.z = -s * .3; ears.add(ea); }
     const ring = new THREE.Mesh(charGeo.ring, new THREE.MeshBasicMaterial({ color: '#6cff8a', transparent: true, opacity: 0, fog: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = .06; g.add(ring);
     const sh = new THREE.Mesh(charGeo.shadow, new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .25 }));
     sh.rotation.x = -Math.PI / 2; sh.position.y = .03; g.add(sh);
-    const c = { g, inner, body, head, bodyMat, headMat, eyeMat, ears, ring, sh, name: null, nameKey: '', bubble: null, bubbleKey: '',
+    const c = { g, inner, body, head, bodyMat, headMat, eyeMat, handMat, hands, emote: null, ears, ring, sh, name: null, nameKey: '', bubble: null, bubbleKey: '',
       x: e.x, y: e.y, heading: 0, walk: 0 };
     scene.add(g);
     chars.set(e.id, c);
@@ -558,7 +663,8 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
       const ghost = !e.alive;
       c.g.position.set(e.x * SC, (ghost ? .35 + Math.sin(performance.now() / 400) * .12 : 0) + bob, e.y * SC);
       const op = ghost ? .45 : 1;
-      c.bodyMat.opacity = op; c.headMat.opacity = op;
+      c.bodyMat.opacity = op; c.headMat.opacity = op; c.handMat.opacity = op;
+      updateHands(c, dt, moved > 0.5);
       c.bodyMat.color.set(e.anon ? '#202026' : e.color);
       const wolfish = e.anon || e.role === 'loup';
       c.ears.visible = wolfish;
@@ -637,6 +743,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     for (const h of cfg.houses) { const d = Math.hypot(x - h.x, y - h.y); if (d < bd) { bd = d; best = h; } }
     if (best && bd < 160) cam.yaw = Math.atan2(Math.cos(best.face), Math.sin(best.face));
   }
+  function playEmote(id, type) { const c = chars.get(id); if (c && POSES[type]) c.emote = { type, start: performance.now() }; }
   // au conseil : caméra derrière le joueur, tournée vers le feu
   // la Voyante ouvre une boîte aux lettres : le drapeau se lève et le rôle apparaît
   function openMailbox(i, text) {
@@ -649,5 +756,5 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   function faceCenterFrom(x, y) { cam.yaw = Math.atan2(x - cfg.center.x, y - cfg.center.y); }
   // demi-angle horizontal du champ de la caméra (pour l'ouverture du rideau à l'écran)
   function hHalfFov() { return Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect); }
-  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, openMailbox, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
+  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, openMailbox, playEmote, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
 }

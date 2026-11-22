@@ -126,3 +126,17 @@ button.small { padding: 4px 8px; font-size: 12px; background: #2c3242; }
 #curtainView .cl { left: 0; border-right: 3px solid #1a0507; border-radius: 0 0 40% 0 / 0 0 8% 0; }
 #curtainView .cr { right: 0; border-left: 3px solid #1a0507; border-radius: 0 0 0 40% / 0 0 0 8%; }
 #curtainView::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, #000a 100%); }
+
+#emoteBar { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px; background: #0b0f17c0; padding: 6px; border-radius: 12px; }
+#emoteBar button { font-size: 20px; padding: 4px 8px; background: #1d2433; position: relative; }
+#emoteBar button:hover { background: #2c3a5c; }
+#emoteBar kbd { position: absolute; right: 2px; bottom: 0; font-size: 9px; padding: 0 3px; }
+@media (max-width: 900px) { #emoteBar { left: auto; right: 12px; transform: none; bottom: 70px; flex-direction: column; } }
+#devModal { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 30; padding: 16px; }
+#devModal .box { width: min(440px, 100%); background: #141a26; border: 1px solid #c79a2b; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px; max-height: 90vh; overflow-y: auto; }
+#devModal h2 { margin: 0; color: #f0c36b; }
+#devModal .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#devModal .row label { flex: 1; }
+#devModal input[type=number] { width: 80px; }
+#devRoles label { flex: 0 0 auto; font-size: 13px; background: #0f141d; padding: 3px 8px; border-radius: 8px; }
+#devAuth, #devOpts { display: flex; flex-direction: column; gap: 8px; }

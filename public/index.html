@@ -75,8 +75,39 @@
     <div id="chatlog"></div>
     <input id="chatIn" maxlength="300" placeholder="Entrée pour parler (proximité)…" autocomplete="off">
   </div>
+  <div id="emoteBar">
+    <button data-emote="up" title="Pouce vers le haut (1)">👍<kbd>1</kbd></button>
+    <button data-emote="down" title="Pouce vers le bas (2)">👎<kbd>2</kbd></button>
+    <button data-emote="point" title="Pointer du doigt (3)">👉<kbd>3</kbd></button>
+    <button data-emote="middle" title="Doigt d'honneur (4)">🖕<kbd>4</kbd></button>
+    <button data-emote="maybe" title="Bof / peut-être (5)">🤚<kbd>5</kbd></button>
+  </div>
   <div id="modal" hidden>
     <div class="box"><h2 id="modalTitle"></h2><div id="modalText"></div><button id="modalOk">OK</button></div>
+  </div>
+</div>
+<!-- mode développeur : Ctrl + Maj + D -->
+<div id="devModal" hidden>
+  <div class="box">
+    <h2>🛠️ Mode développeur</h2>
+    <div id="devAuth">
+      <p>Entrez le code développeur.</p>
+      <input id="devCode" type="password" placeholder="Code secret" autocomplete="off">
+      <button id="devAuthBtn" class="primary">Valider</button>
+    </div>
+    <div id="devOpts" hidden>
+      <p>Partie de test seul avec des bots (aucune XP n'est gagnée).</p>
+      <div class="row"><label>Nombre de bots</label><input id="devBots" type="number" min="2" max="15" value="7"></div>
+      <div class="row"><label>Mon rôle</label><select id="devRole"><option value="">Aléatoire</option></select></div>
+      <div class="row"><label>Loups-garous</label><select id="devWolves"><option value="0">Auto</option><option>1</option><option>2</option><option>3</option></select></div>
+      <div class="row" id="devRoles"></div>
+      <div class="row"><label>Tour de chaque rôle (s)</label><input id="devTurn" type="number" min="5" max="120" value="30"></div>
+      <div class="row"><label>Débat (s)</label><input id="devDay" type="number" min="10" max="600" value="60"></div>
+      <div class="row"><label>Vote (s)</label><input id="devVote" type="number" min="10" max="300" value="30"></div>
+      <button id="devGo" class="primary">▶ Lancer la partie de test</button>
+    </div>
+    <p id="devErr" class="err" hidden></p>
+    <button id="devClose" class="small">Fermer</button>
   </div>
 </div>
 <script src="/socket.io/socket.io.js"></script>

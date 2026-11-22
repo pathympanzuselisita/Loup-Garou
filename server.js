@@ -11,6 +11,8 @@ const path = require('path');
 const os = require('os');
 const { Server } = require('socket.io');
 const { openAccounts } = require('./accounts');
+const crypto = require('crypto');
+const devFails = new Map();
 let accounts = null; // ouvert au démarrage
 
 const PORT = +process.env.PORT || 3000;
@@ -60,6 +62,10 @@ const ROLE_INFO = {
                 desc: "Vous êtes arrivé en cours de partie : vous regardez en fantôme." },
 };
 const SPECIAL_ROLES = ['voyante', 'sorciere', 'chasseur', 'cupidon', 'petitefille'];
+const EMOTES = ['up', 'down', 'point', 'middle', 'maybe'];
+// mode développeur : code secret (variable d'environnement DEV_CODE).
+// En local (hors Render), un code par défaut est utilisé s'il n'est pas défini.
+const DEV_CODE = process.env.DEV_CODE || (process.env.RENDER ? '' : 'brumeval-dev');
 const COLORS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6',
   '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#aaffc3', '#ffd8b1', '#808000', '#ffffff'];
 
@@ -255,13 +261,25 @@ function buildRoles(n) {
   return shuffle(list);
 }
 
-function startGame() {
+function startGame(force = null) {
   for (const p of all()) if (!p.connected) game.players.delete(p.id);
   const shuffled = shuffle(all());
   const players = shuffled.slice(0, HOUSE_COUNT);
   for (const p of shuffled.slice(HOUSE_COUNT)) Object.assign(p, { alive: false, spectator: true, role: 'spectateur', house: null });
   if (players.length < 3) return sys('Il faut au moins 3 joueurs pour commencer.', 'warn', game.hostId);
   const roles = buildRoles(players.length);
+  // mode développeur : on peut imposer son propre rôle
+  if (force && force.role && ROLE_INFO[force.role] && force.role !== 'spectateur') {
+    const idx = players.findIndex(p => p.id === force.id);
+    if (idx >= 0) {
+      const j = roles.indexOf(force.role);
+      if (j >= 0) [roles[idx], roles[j]] = [roles[j], roles[idx]];
+      else {
+        const old = roles[idx]; roles[idx] = force.role;
+        if (old === 'loup' && !roles.includes('loup')) { const k = roles.findIndex((r, x) => x !== idx); roles[k] = 'loup'; }
+      }
+    }
+  }
   players.forEach((p, i) => {
     p.house = HOUSES[Math.round(i * HOUSE_COUNT / players.length) % HOUSE_COUNT];
     p.role = roles[i]; p.alive = true; p.spectator = false; p.lover = null; p.seen = {};
@@ -461,9 +479,9 @@ function endGame(winner) {
   announce(T[winner], recap);
   sys(T[winner], 'phase');
   broadcastState();
-  // XP : chaque joueur de la partie gagne de l'expérience
+  // XP : chaque joueur de la partie gagne de l'expérience (pas en partie de test)
   for (const p of all()) {
-    if (!p.role || p.spectator) continue;
+    if (!p.role || p.spectator || p.bot || game.dev) continue;
     const won = winner === 'village' ? ROLE_INFO[p.role].team === 'village'
       : winner === 'loups' ? isWolf(p) : winner === 'amoureux' ? !!(game.lovers && game.lovers.includes(p.id)) : false;
     accounts.reward(p.id, { won, survived: p.alive }).then(r => {
@@ -504,7 +522,7 @@ function attach(socket, joinData) {
       const used = new Set(all().map(p => p.color));
       me = { id, name, color: COLORS.find(c => !used.has(c)) || COLORS[game.players.size % COLORS.length],
         x: CENTER.x + rnd(-120, 120), y: CENTER.y + rnd(-120, 120), alive: true, role: null,
-        house: null, lover: null, seen: {}, spectator: false, voice: false, level: user.level };
+        house: null, lover: null, seen: {}, spectator: false, voice: false, level: user.level, bot: !!user.bot };
       if (game.phase !== 'lobby') { me.alive = false; me.spectator = true; me.role = 'spectateur'; }
       game.players.set(id, me);
       sys(`${name} rejoint le village.`);
@@ -512,11 +530,19 @@ function attach(socket, joinData) {
     me.socketId = socket.id;
     me.connected = true;
     me.voice = false;
-    if (!game.hostId || !get(game.hostId)?.connected) game.hostId = id;
+    if (!user.bot && (!game.hostId || !get(game.hostId)?.connected || get(game.hostId)?.bot)) game.hostId = id;
     socket.emit('welcome', { id, room: code, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
       ring: HOUSE_RING, houses: HOUSES, hearRadius: HEAR_RADIUS, councilRadius: COUNCIL_RADIUS, peek: { range: PEEK_RANGE, half: PEEK_HALF_ANGLE } });
     socket.emit('teleport', { x: me.x, y: me.y });
     broadcastState();
+    // partie de test du développeur : on ajoute les bots et on lance
+    if (game.dev && game.dev.owner === id && !game.dev.launched) {
+      game.dev.launched = true;
+      const o = game.dev.opts;
+      addBots(o.bots);
+      Object.assign(game.settings, o.settings);
+      setTimeout(() => { if (game.phase === 'lobby') startGame({ id, role: o.role }); }, 1500);
+    }
   };
 
   const guard = fn => (...args) => { if (me && game.players.get(me.id) === me) { try { fn(...args); } catch (e) { console.error(e); } } };
@@ -643,6 +669,18 @@ function attach(socket, joinData) {
     const a = alive().filter(p => p.connected);
     if (a.every(p => game.votes[p.id])) setTimer(3, resolveVote);
   }));
+  // emotes avec les mains : visibles par ceux qui voient le joueur
+  let lastEmote = 0;
+  socket.on('emote', guard(type => {
+    if (!EMOTES.includes(type) || Date.now() - lastEmote < 700) return;
+    if (isNight() && me.alive && !(isWolf(me) && step() === 'loups')) return; // on dort
+    lastEmote = Date.now();
+    for (const q of all()) {
+      if (!q.connected || (q.id !== me.id && !canSee(q, me))) continue;
+      const id = q.id !== me.id && peeking(q) && dist(q, me) > PEEK_IDENTIFY ? anonId(me) : me.id;
+      io.to(q.socketId).emit('emote', { id, type });
+    }
+  }));
   socket.on('hunter-shoot', guard(t => {
     if (game.phase !== 'hunter' || !game.hunter || game.hunter.id !== me.id) return;
     const p = aliveTarget(t);
@@ -674,7 +712,7 @@ function attach(socket, joinData) {
     me.voice = false;
     io.to(code).emit('voice-gone', me.id);
     if (game.phase === 'lobby') { game.players.delete(me.id); sys(`${me.name} a quitté le village.`); }
-    if (game.hostId === me.id) game.hostId = all().find(p => p.connected)?.id || null;
+    if (game.hostId === me.id) game.hostId = all().find(p => p.connected && !p.bot)?.id || null;
     lastActive = Date.now();
     broadcastState();
   });
@@ -746,9 +784,88 @@ const hearTimer = setInterval(() => {
   }
 }, 200);
 
-function connectedCount() { return all().filter(p => p.connected).length; }
-function destroy() { clearInterval(posTimer); clearInterval(hearTimer); clearTimer(); }
-return { code, attach, destroy, connectedCount, get lastActive() { return lastActive; }, get game() { return game; } };
+// ------------------------------------------------- bots (mode développeur)
+const bots = new Map();
+let botTimer = null;
+const BOT_NAMES = ['Gaspard', 'Margot', 'Basile', 'Rosalie', 'Anatole', 'Capucine', 'Firmin', 'Léonie', 'Hector', 'Philomène', 'Octave', 'Zélie', 'Ambroise', 'Clémence', 'Séraphin'];
+const BOT_LINES = ['Je trouve ça louche…', 'Ce n\'est pas moi, je le jure !', 'Qui a entendu quelque chose cette nuit ?', 'Je soupçonne {n}.', 'Faites-moi confiance.', 'Hmm… {n} est bien silencieux.', '{n}, tu étais où cette nuit ?', 'On devrait voter contre {n}.'];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+// faux « socket » : les bots passent par exactement les mêmes règles que les joueurs
+function fakeSocket(user) {
+  const h = {};
+  return { id: 'bot:' + user.id, data: { user, room: code }, handshake: { headers: {}, address: 'bot' },
+    join() {}, emit() {}, on(ev, fn) { h[ev] = fn; }, trigger(ev, ...a) { if (h[ev]) h[ev](...a); } };
+}
+function addBots(n) {
+  n = Math.max(1, Math.min(HOUSE_COUNT - 1, n | 0));
+  for (let k = 0; k < n; k++) {
+    const user = { id: `bot_${code}_${k}`, name: '🤖 ' + BOT_NAMES[k % BOT_NAMES.length], level: 1 + Math.floor(Math.random() * 12), bot: true };
+    const sock = fakeSocket(user);
+    bots.set(user.id, { sock, user, t: {} });
+    attach(sock);
+  }
+  if (!botTimer) botTimer = setInterval(botTick, 150);
+}
+function botTick() {
+  const now = Date.now();
+  for (const b of bots.values()) {
+    const p = get(b.user.id);
+    if (!p) continue;
+    const T = b.t;
+    const key = `${game.phase}:${game.day}:${step() || ''}`;
+    const once = (k, min, max, fn) => { k = key + k; if (T.done === k) return; if (T.k !== k) { T.k = k; T.at = now + rnd(min, max); } if (now >= T.at) { T.done = k; fn(); } };
+    const moveTo = (x, y) => { // 220 px/s, renvoie true une fois arrivé
+      const dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
+      if (d < 10) return true;
+      const st = Math.min(d, 33); b.sock.trigger('move', { x: p.x + dx / d * st, y: p.y + dy / d * st }); return false;
+    };
+    if (game.phase === 'hunter' && game.hunter && game.hunter.id === p.id) once('hunt', 1500, 4000, () => { const o = alive(); if (o.length) b.sock.trigger('hunter-shoot', pick(o).id); });
+    if (!p.alive) continue;
+    const others = alive().filter(q => q.id !== p.id);
+    if (game.phase === 'day' || game.phase === 'lobby') {
+      if (!b.wander || b.wanderKey !== key || now > b.wanderUntil) {
+        const a = Math.random() * Math.PI * 2, r = rnd(120, 520);
+        b.wander = { x: CENTER.x + Math.cos(a) * r, y: CENTER.y + Math.sin(a) * r }; b.wanderKey = key; b.wanderUntil = now + rnd(4000, 9000);
+      }
+      moveTo(b.wander.x, b.wander.y);
+      if (game.phase === 'day') once('ready', 10000, 25000, () => b.sock.trigger('ready-vote'));
+      if (now > (b.nextTalk || 0)) {
+        b.nextTalk = now + rnd(7000, 16000);
+        if (Math.random() < .55 && others.length) b.sock.trigger('chat', pick(BOT_LINES).replace('{n}', pick(others).name));
+        else b.sock.trigger('emote', pick(EMOTES));
+      }
+    }
+    if (game.phase === 'vote') once('vote', 2000, 7000, () => {
+      const opts = others.filter(q => !(isWolf(p) && isWolf(q)));
+      if (opts.length) { b.sock.trigger('vote', pick(opts).id); if (Math.random() < .6) b.sock.trigger('emote', pick(['point', 'down', 'middle'])); }
+    });
+    if (game.phase === 'night' && game.night) {
+      const st = step(), n = game.night;
+      if (st === 'cupidon' && p.role === 'cupidon') once('cupid', 1500, 4000, () => { const a = shuffle(alive().slice()); if (a.length > 1) b.sock.trigger('cupid', [a[0].id, a[1].id]); });
+      if (st === 'voyante' && p.role === 'voyante' && !n.seerDone && others.length) {
+        if (b.goalKey !== key) { const t = pick(others); b.goal = { i: t.house.i, ...mailboxPos(t.house) }; b.goalKey = key; }
+        if (moveTo(b.goal.x, b.goal.y)) b.sock.trigger('seer-mailbox', b.goal.i);
+      }
+      if (st === 'loups' && isWolf(p) && !n.wolfVotes[p.id]) {
+        // les bots suivent le choix déjà fait par un autre loup, sinon choisissent une victime commune
+        const already = Object.values(n.wolfVotes)[0];
+        if (!n.botPrey) { const prey = others.filter(q => !isWolf(q)); n.botPrey = prey.length ? pick(prey).id : null; }
+        const victim = get(already || n.botPrey);
+        if (victim && victim.alive) {
+          const h = victim.house;
+          if (moveTo(h.x + Math.cos(h.face) * 90, h.y + Math.sin(h.face) * 90)) b.sock.trigger('scratch', h.i);
+        }
+      }
+    }
+    if (game.phase === 'witch' && p.role === 'sorciere' && game.night && !game.night.witchDone) once('witch', 2000, 5000, () =>
+      b.sock.trigger('witch', { save: Math.random() < .5, kill: Math.random() < .25 && others.length ? pick(others).id : null }));
+  }
+}
+
+function connectedCount() { return all().filter(p => p.connected && !p.bot).length; }
+function destroy() { clearInterval(posTimer); clearInterval(hearTimer); clearInterval(botTimer); clearTimer(); }
+function setDev(owner, opts) { game.dev = { owner, opts, launched: false }; }
+return { code, attach, destroy, connectedCount, setDev, get lastActive() { return lastActive; }, get game() { return game; } };
 } // ------------------------------------------------------- fin du salon
 
 // connexion : créer un salon ou en rejoindre un avec son code
@@ -764,6 +881,40 @@ io.on('connection', socket => {
     return signedIn({ user });
   })));
   socket.on('logout', (token, ack) => reply(ack, accounts.logout(token).then(() => { socket.data.user = null; return { ok: true }; })));
+
+  socket.emit('roles-info', ROLE_INFO);
+  // ---- mode développeur (code secret)
+  socket.on('dev-auth', (code, ack) => {
+    if (typeof ack !== 'function') return;
+    if (!socket.data.user) return ack({ error: 'Connectez-vous d\'abord.' });
+    if (!DEV_CODE) return ack({ error: 'Mode développeur désactivé sur ce serveur (variable DEV_CODE absente).' });
+    const f = devFails.get(ip) || { n: 0, t: 0 };
+    if (f.n >= 5 && Date.now() - f.t < 10 * 60e3) return ack({ error: 'Trop d\'essais, réessayez plus tard.' });
+    const a = crypto.createHash('sha256').update(String(code || '')).digest(), b = crypto.createHash('sha256').update(DEV_CODE).digest();
+    if (!crypto.timingSafeEqual(a, b)) { devFails.set(ip, { n: f.n + 1, t: Date.now() }); return ack({ error: 'Code incorrect.' }); }
+    devFails.delete(ip);
+    socket.data.dev = true;
+    console.log(`Mode développeur ouvert par ${socket.data.user.name}`);
+    ack({ ok: true });
+  });
+  socket.on('dev-create', (o = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    if (!socket.data.dev || !socket.data.user) return ack({ error: 'Mode développeur non autorisé.' });
+    const code = newCode();
+    const room = createRoom(code);
+    rooms.set(code, room);
+    const roles = {};
+    for (const r of SPECIAL_ROLES) roles[r] = !!(o.roles && o.roles[r]);
+    const t = v => Math.max(5, Math.min(600, +v || 30));
+    room.setDev(socket.data.user.id, {
+      bots: Math.max(2, Math.min(15, +o.bots || 7)),
+      role: ROLE_INFO[o.role] ? o.role : null,
+      settings: { wolves: Math.max(0, Math.min(6, +o.wolves || 0)), roles,
+        timers: { night: t(o.turn), witch: t(o.turn), hunter: t(o.turn), day: t(o.day || 60), vote: t(o.vote || 30) } },
+    });
+    console.log(`Salon de test ${code} créé par ${socket.data.user.name}`);
+    ack({ code });
+  });
 
   // ---- salons (réservés aux joueurs connectés)
   socket.on('create-room', ack => {

@@ -25,6 +25,23 @@ déclarent dans `accounts.js` (liste `SKINS`).
   d'environnement `DATABASE_URL` (par exemple une base gratuite Neon, https://neon.tech).
   Sans elle, sur Render, les comptes sont effacés à chaque redémarrage.
 
+## Emotes
+
+Chaque personnage a deux **mains volantes**. Touches **1 à 5** (ou la barre en bas de l'écran) :
+👍 pouce vers le haut · 👎 pouce vers le bas · 👉 pointer du doigt · 🖕 doigt d'honneur · 🤚 « bof ».
+Les joueurs qui vous voient voient le geste (la nuit, seuls les loups pendant leur tour peuvent en faire).
+
+## Mode développeur
+
+**Ctrl + Maj + D** (une fois connecté) ouvre le mode développeur, protégé par un **code secret** :
+partie de test seul avec 2 à 15 **bots** qui jouent tous les rôles (déplacements, griffures,
+boîtes aux lettres, votes, chat, emotes). On peut choisir son rôle et la durée des tours.
+Les parties de test ne rapportent pas d'XP.
+
+- **En local**, le code par défaut est `brumeval-dev`.
+- **En ligne**, définir la variable d'environnement `DEV_CODE` (sur Render : *Environment*) avec
+  un code que vous seul connaissez. Sans elle, le mode développeur est désactivé.
+
 ## Salons
 
 Sur l'écran d'accueil : **« Créer une partie »** ouvre un nouveau salon avec un **code de 4 lettres**
