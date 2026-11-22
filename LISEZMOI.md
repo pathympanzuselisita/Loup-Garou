@@ -63,7 +63,12 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
   silhouette : elle ne le reconnaît que s'il passe tout près. Mais les loups voient le rideau
   s'entrouvrir, et s'ils restent trop près trop longtemps, la meute découvre qui elle est.
 - Chaque maison a deux fenêtres à rideaux et une **boîte aux lettres** avec le nom de l'habitant.
-  Chaque rôle a un chrono : action non faite = action perdue.
+- **La nuit se joue en tours** : Cupidon (1ʳᵉ nuit), puis la Voyante, puis les Loups-Garous, puis
+  la Sorcière. Chaque rôle a **30 secondes** (réglable) ; son tour se termine **dès que l'action
+  est faite**. Action non faite = action perdue.
+- **Loups-Garous** : pendant leur tour, ils sortent et vont **griffer la maison** de leur victime
+  (touche **E**, tout près de la maison). Si toute la meute griffe la même maison, le choix est
+  fait aussitôt ; si personne ne griffe, personne ne meurt. Les loups ne voient pas la Voyante.
 - **Jour** : tout le monde se déplace et débat. Si plus de la moitié clique « Passer au vote »,
   le vote commence plus tôt.
 - **Vote — le conseil du village** : tous les vivants sont réunis en cercle autour du feu, au centre
@@ -75,7 +80,7 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
 
 | Rôle | Pouvoir |
 |---|---|
-| 🐺 Loup-Garou | Vote chaque nuit pour dévorer un villageois |
+| 🐺 Loup-Garou | Griffe chaque nuit la maison de sa victime |
 | 🧑‍🌾 Villageois | Aucun, mais vote le jour |
 | 🔮 Voyante | La nuit, sort de chez elle et ouvre la boîte aux lettres d'une maison (E) pour lire le rôle de l'habitant, puis rentre dormir. Les rôles découverts restent affichés pour elle |
 | 🧪 Sorcière | Une potion de vie, une potion de mort |

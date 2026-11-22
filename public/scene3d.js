@@ -341,6 +341,13 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     add(new THREE.CylinderGeometry(.08, .1, .7, 6), woodMat, 1.3, .77, -.6);
     const rug = new THREE.Mesh(new THREE.CircleGeometry(.9, 20), new THREE.MeshStandardMaterial({ color: '#8b2f2f' }));
     rug.rotation.x = -Math.PI / 2; rug.position.set(.3, .46, .5); body.add(rug);
+    // griffures des loups sur la façade (visibles par la meute)
+    const claws = new THREE.Group(); claws.visible = false; g.add(claws);
+    const clawMat = new THREE.MeshBasicMaterial({ color: '#2a0505' });
+    for (let k = 0; k < 3; k++) {
+      const c = new THREE.Mesh(new THREE.PlaneGeometry(.09, 1.1), clawMat);
+      c.position.set(-1.05 + k * .22, 1.5, d / 2 + .02); c.rotation.z = -.35; claws.add(c);
+    }
     // boîte aux lettres devant la maison, avec le nom de l'habitant
     const MB = { x: 2.5, z: d / 2 + 1.3 };
     const mbMat = new THREE.MeshStandardMaterial({ color: '#6b7b8c', roughness: .6, metalness: .3 });
@@ -357,7 +364,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     colliders.push({ x: h.x, y: h.y, r: 62, house: i });
     const sf = Math.sin(h.face), cf = Math.cos(h.face);
     colliders.push({ x: h.x + (MB.x * sf + MB.z * cf) / SC, y: h.y + (-MB.x * cf + MB.z * sf) / SC, r: 12 });
-    return { g, roof, hinge, windows, curtainMat, doorMat, sheet, label, labelKey: '', plateCv, plateTex, flag, owner: null, doorAngle: 0, doorTarget: 0, h, d, t };
+    return { g, claws, roof, hinge, windows, curtainMat, doorMat, sheet, label, labelKey: '', plateCv, plateTex, flag, owner: null, doorAngle: 0, doorTarget: 0, h, d, t };
   }
 
   // --------------------------------------------------------- personnages
@@ -523,7 +530,8 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
         h.plateTex.needsUpdate = true;
         h.flag.rotation.z = o ? 0 : Math.PI / 2;
       }
-      h.curtainMat.emissiveIntensity = (o && o.alive ? amb.win : 0) * .55;
+      h.curtainMat.emissiveIntensity = 0; // aucune lumière derrière les rideaux la nuit
+      h.claws.visible = !!(V.night && V.scratched && V.scratched.includes(h.h.i));
       h.roof.visible = h !== inside || !!V.peek;
       h.hinge.rotation.y = 0;
       // rideaux : ma fenêtre quand j'espionne, ou celle qu'un loup voit s'entrouvrir

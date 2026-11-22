@@ -195,13 +195,16 @@ window.addEventListener('keydown', e => {
   if (!joined || !$('#login').hidden) return;
   if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
   if (e.key === 'Enter') { chatIn.focus(); e.preventDefault(); return; }
-  if (isGirlNight() && !e.repeat) { // Petite Fille : Q/A = rideau gauche, D = rideau droit, E/S = refermer
+  if (isGirlNight() && S.step === 'loups' && !e.repeat) { // Petite Fille : Q/A = rideau gauche, D = rideau droit, E/S = refermer
     const k = e.key.toLowerCase();
     if (k === 'q' || k === 'a' || k === 'arrowleft') return openCurtain(0);
     if (k === 'd' || k === 'arrowright') return openCurtain(1);
     if (k === 'e' || k === 's' || k === 'arrowdown') return closeCurtain();
   }
-  if (e.key.toLowerCase() === 'e' && !e.repeat) { const mb = nearMailbox(); if (mb) socket.emit('seer-mailbox', mb.house.i); }
+  if (e.key.toLowerCase() === 'e' && !e.repeat) {
+    const mb = nearMailbox(); if (mb) socket.emit('seer-mailbox', mb.house.i);
+    const hs = nearHouseToScratch(); if (hs) socket.emit('scratch', hs.house.i);
+  }
   keys.add(e.key.toLowerCase());
   if (e.key.startsWith('Arrow')) e.preventDefault();
 });
@@ -212,7 +215,7 @@ window.addEventListener('blur', () => keys.clear());
 let peekAngle = Math.PI / 2, peekPitch = 0, peekWin = 0, lastPeekSend = 0, lastPeekKey = '';
 const isGirlNight = () => S && S.me.role === 'petitefille' && S.me.alive && isNightPhase();
 function openCurtain(win) {
-  if (!isGirlNight() || S.spotted) return;
+  if (!isGirlNight() || S.step !== 'loups' || S.spotted) return;
   const h = myHouse(); if (h && !S.peek) { peekAngle = h.face; peekPitch = 0; }
   S.peek = true; peekWin = win; S.peekWin = win;
   sendPeek(true);
@@ -261,12 +264,25 @@ const amWolf = () => S && S.me.role === 'loup';
 function canMoveClient() {
   if (!S) return false;
   if (S.phase === 'lobby' || S.phase === 'end' || !S.me.alive) return true;
-  if (isNightPhase()) return amWolf() || seerRoaming();
+  if (isNightPhase()) return wolfActive() || seerRoaming();
   if (S.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
 }
 // ------------------------------------------------------- Voyante
-const seerRoaming = () => S && S.phase === 'night' && S.me.alive && S.me.role === 'voyante' && !S.seerTarget;
+const seerRoaming = () => S && S.phase === 'night' && S.step === 'voyante' && S.me.alive && S.me.role === 'voyante' && !S.seerTarget;
+// loups : maison la plus proche qu'on peut griffer (habitée par un non-loup)
+const wolfActive = () => S && S.phase === 'night' && S.step === 'loups' && S.me.alive && amWolf();
+function nearHouseToScratch() {
+  if (!wolfActive()) return null;
+  let best = null, bd = 115;
+  for (const p of S.players) {
+    if (!p.house || !p.alive || p.role === 'loup') continue;
+    const d = Math.hypot(p.house.x - me.x, p.house.y - me.y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+const STEP_NAMES = { cupidon: '💘 Cupidon', voyante: '🔮 la Voyante', loups: '🐺 les Loups-Garous' };
 function mailboxPos(h) { const sf = Math.sin(h.face), cf = Math.cos(h.face); return { x: h.x + 50 * sf + 72 * cf, y: h.y - 50 * cf + 72 * sf }; }
 // boîte aux lettres la plus proche (habitée par un autre joueur vivant)
 function nearMailbox() {
@@ -303,7 +319,7 @@ let lastListKey = '';
 
 function renderAll() {
   if (!S || !CFG) return;
-  const PH = { lobby: '🏡 Salle d\'attente', night: `🌙 Nuit ${S.day}`, witch: `🧪 Nuit ${S.day} — la sorcière`,
+  const PH = { lobby: '🏡 Salle d\'attente', night: `🌙 Nuit ${S.day}${S.step ? ' — tour de ' + STEP_NAMES[S.step] : ''}`, witch: `🧪 Nuit ${S.day} — la sorcière`,
     hunter: '🏹 Le chasseur vise…', day: `☀️ Jour ${S.day} — débat`, vote: `🗳️ Jour ${S.day} — vote`, end: '🏁 Fin de partie' };
   $('#phaseLbl').textContent = PH[S.phase] || S.phase;
   // carte de rôle
@@ -347,7 +363,7 @@ function renderPanel() {
       ${['voyante', 'sorciere', 'chasseur', 'cupidon', 'petitefille'].map(rk => `<div class="row"><label>${R(rk).icon} ${R(rk).name}</label>
         <input type="checkbox" data-role="${rk}" ${st.roles[rk] ? 'checked' : ''}></div>`).join('')}
       <p><b>Chronos (secondes)</b></p>
-      ${[['night', 'Nuit (actions)'], ['witch', 'Sorcière'], ['day', 'Débat'], ['vote', 'Vote'], ['hunter', 'Chasseur']].map(([k, l]) =>
+      ${[['night', 'Tour de chaque rôle (nuit)'], ['witch', 'Sorcière'], ['day', 'Débat'], ['vote', 'Vote'], ['hunter', 'Chasseur']].map(([k, l]) =>
         `<div class="row"><label>${l}</label><input type="number" min="10" max="600" data-timer="${k}" value="${st.timers[k]}"></div>`).join('')}
       <button class="primary" data-act="start" ${n < 3 ? 'disabled' : ''} style="width:100%;margin-top:8px">▶ Lancer la partie</button>`;
     } else {
@@ -360,9 +376,11 @@ function renderPanel() {
     if (!S.me.alive) h += `<h4>👻 Vous êtes un fantôme</h4><p>Vous voyez tout. Les loups votent :</p>${wolfVotesHtml()}`;
     else if (role === 'loup') {
       const mine = S.wolfVotes && S.wolfVotes[myId];
-      h += `<h4>🐺 Choisissez votre victime</h4><p>Sortez discrètement de chez vous et retrouvez la meute (tanière en haut à gauche). Votre voix est déformée cette nuit. Gare aux rideaux qui s'entrouvrent : la Petite Fille espionne peut-être !</p>
-        ${mine ? '' : '<p class="warn">⚠ Vous n\'avez pas encore voté !</p>'}
-        ${targetBtns(living.filter(p => p.role !== 'loup'), 'wolf-vote', { sel: p => mine === p.id, extra: p => wolfCount(p.id) })}`;
+      if (S.step !== 'loups') h += `<h4>💤 Vous dormez</h4><p>C'est le tour de ${STEP_NAMES[S.step] || '…'}. Votre tour viendra.</p>`;
+      else h += `<h4>🐾 Griffez la maison de votre victime</h4><p>Sortez de chez vous et allez <b>tout près</b> de la maison de votre victime, puis appuyez sur <b>E</b> pour la griffer. Si toute la meute griffe la même maison, le choix est fait tout de suite. Si personne ne griffe, personne ne meurt.</p>
+        <p>Votre voix est déformée. Gare aux rideaux qui s'entrouvrent : la Petite Fille espionne peut-être !</p>
+        ${mine ? '<p class="done">Vous avez griffé la maison de ' + esc(P(mine)?.name || '?') + '.</p>' : '<p class="warn">⚠ Vous n\'avez encore griffé aucune maison !</p>'}
+        ${wolfVotesHtml()}`;
     } else if (role === 'voyante') {
       if (S.seerTarget) { const t = P(S.seerTarget); h += `<h4>🔮 Vision</h4><p class="done">${esc(t.name)} est ${R(t.role)?.icon} ${esc(R(t.role)?.name || '?')}.</p><p>Vous rentrez dormir… Son nom et son rôle resteront affichés pour vous.</p>`; }
       else h += `<h4>🔮 Sortez lire une boîte aux lettres</h4><p>Sortez de chez vous, approchez-vous de la boîte aux lettres de la maison de votre choix et appuyez sur <b>E</b> : vous découvrirez le rôle de son habitant. Une seule boîte par nuit.</p>
@@ -423,6 +441,7 @@ function renderPanel() {
 }
 function girlPanel() {
   if (S.spotted) return `<h4>👧 Repérée !</h4><p class="warn">Les loups vous ont vue. Vos rideaux restent fermés jusqu'au matin.</p>`;
+  if (S.step !== 'loups') return `<h4>👧 Patience…</h4><p>C'est le tour de ${STEP_NAMES[S.step] || 'la Sorcière'}. Vous pourrez espionner pendant le tour des Loups-Garous.</p>`;
   return `<h4>👧 Espionner les loups</h4>
     <p>Entrouvrez le rideau d'une fenêtre : vous regardez dehors à la première personne, par une fente étroite (bougez la souris pour regarder). Les loups lointains sont des silhouettes ; vous ne les reconnaissez que s'ils passent tout près… mais ils voient le rideau bouger !</p>
     <div class="row"><button data-act="peek0" class="${S.peek && peekWin === 0 ? 'sel' : ''}" style="flex:1">🪟 Rideau gauche (Q)</button>
@@ -518,11 +537,12 @@ function frame(t) {
 
   // message central
   let msg = '';
-  if (isNightPhase() && S.me.alive && !amWolf()) {
+  if (wolfActive()) { const hs = nearHouseToScratch(); msg = hs ? `🐾 E : griffer la maison de ${hs.name}` : ''; }
+  else if (isNightPhase() && S.me.alive) {
     if (seerRoaming()) { const mb = nearMailbox(); msg = mb ? `📬 E : ouvrir la boîte aux lettres de ${mb.name}` : '🔮 Allez jusqu\'à une boîte aux lettres'; }
     else if (seerOutside()) msg = '🔮 Vous rentrez dormir…';
-    else msg = isGirlNight() ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
-      : needsAction() ? '🌙 Agissez avant la fin de la nuit ! →' : '💤 Vous dormez dans votre maison…';
+    else msg = isGirlNight() && S.step === 'loups' ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
+      : needsAction() ? '🌙 C\'est votre tour : agissez ! →' : `💤 Vous dormez… (tour de ${STEP_NAMES[S.step] || 'la Sorcière'})`;
   }
   const cm = $('#centerMsg');
   if (cm.textContent !== msg) cm.textContent = msg;
@@ -548,16 +568,16 @@ function frame(t) {
   const owners = {};
   for (const p of S.players) if (p.house) owners[p.house.i] = { ...p, roleText: p.id !== myId ? roleText(p) : '' };
   scene3d.frame(dt, {
-    phase: S.phase, night: isNightPhase(), seerRoam: seerOutside(), myVote: S.phase === 'vote' ? (S.votes || {})[myId] : null, alive: S.me.alive, wolf: amWolf(), me, entities, owners,
+    phase: S.phase, night: isNightPhase(), seerRoam: seerOutside(), myVote: S.phase === 'vote' ? (S.votes || {})[myId] : null, alive: S.me.alive, wolf: wolfActive(), scratched: S.scratched || [], me, entities, owners,
     peek: isGirlNight() && S.peek ? { angle: peekAngle, pitch: peekPitch, win: peekWin, half: CFG.peek.half, range: CFG.peek.range } : null,
     ajar: voice.ajar && isNightPhase() ? voice.ajar : null,
-    showRing: S.phase !== 'lobby' && S.phase !== 'end' && (!isNightPhase() || amWolf() || !S.me.alive),
+    showRing: S.phase !== 'lobby' && S.phase !== 'end' && (!isNightPhase() || wolfActive() || !S.me.alive),
   });
 }
 function needsAction() {
   if (!S.me.alive) return false;
   const r = S.me.role;
-  if (S.phase === 'night') return (r === 'loup' && !(S.wolfVotes || {})[myId]) || (r === 'voyante' && !S.seerTarget) || (r === 'cupidon' && S.day === 1 && !S.cupid);
+  if (S.phase === 'night') return (r === 'loup' && S.step === 'loups' && !(S.wolfVotes || {})[myId]) || (r === 'voyante' && S.step === 'voyante' && !S.seerTarget) || (r === 'cupidon' && S.step === 'cupidon' && !S.cupid);
   if (S.phase === 'witch') return !!(S.witch && !S.witch.done);
   if (S.phase === 'vote') return !(S.votes || {})[myId];
   if (S.phase === 'hunter') return S.hunterId === myId;
@@ -737,4 +757,4 @@ setInterval(() => {
   voice.levels.set(myId, voice.track && !voice.muted && canHearSelf() ? level(voice.localAn) : 0);
   for (const [id, peer] of voice.peers) voice.levels.set(id, peer.audio.volume > 0 ? level(peer.an) : 0);
 }, 100);
-function canHearSelf() { return !isNightPhase() || amWolf() || !S.me.alive; }
+function canHearSelf() { return !isNightPhase() || wolfActive() || !S.me.alive; }

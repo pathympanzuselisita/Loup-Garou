@@ -43,11 +43,11 @@ const DETECT_TIME = 2;                   // secondes cumulées pour être repér
 
 const ROLE_INFO = {
   loup:       { name: 'Loup-Garou', team: 'loups', icon: '🐺',
-                desc: "Chaque nuit, sortez discrètement de votre maison, rejoignez la meute (la tanière est un bon point de rendez-vous) et choisissez une victime avant la fin du chrono. La nuit, votre voix est déformée pour qu'on ne vous reconnaisse pas. Méfiez-vous de la Petite Fille : un rideau qui s'entrouvre trahit sa présence !" },
+                desc: "Quand c'est votre tour la nuit (30 s), sortez de votre maison et allez griffer la maison de votre victime (touche E, tout près de la maison). Si toute la meute griffe la même maison, le choix est fait tout de suite ; si personne ne griffe, personne ne meurt. La nuit, votre voix est déformée pour qu'on ne vous reconnaisse pas. Méfiez-vous de la Petite Fille : un rideau qui s'entrouvre trahit sa présence !" },
   villageois: { name: 'Villageois', team: 'village', icon: '🧑‍🌾',
                 desc: "Vous n'avez aucun pouvoir, mais votre voix compte : discutez, démasquez les loups et votez pour les éliminer." },
   voyante:    { name: 'Voyante', team: 'village', icon: '🔮',
-                desc: "Chaque nuit, sortez de chez vous et ouvrez la boîte aux lettres d'une maison (touche E) : vous y lisez le rôle de son habitant. Ensuite vous rentrez dormir. Les joueurs démasqués gardent leur nom et leur rôle affichés au-dessus de leur tête pour vous. Attention : les loups rôdent et peuvent vous voir dehors !" },
+                desc: "Quand c'est votre tour la nuit (30 s), sortez de chez vous et ouvrez la boîte aux lettres d'une maison (touche E) : vous y lisez le rôle de son habitant. Ensuite vous rentrez dormir. Les joueurs démasqués gardent leur nom et leur rôle affichés au-dessus de leur tête pour vous. Les loups dorment pendant votre tour." },
   sorciere:   { name: 'Sorcière', team: 'village', icon: '🧪',
                 desc: "Vous avez une potion de vie (sauver la victime des loups) et une potion de mort (tuer quelqu'un). Chacune ne sert qu'une fois dans la partie." },
   chasseur:   { name: 'Chasseur', team: 'village', icon: '🏹',
@@ -93,7 +93,7 @@ const game = {
   settings: {
     wolves: 0, // 0 = automatique
     roles: { voyante: true, sorciere: true, chasseur: true, cupidon: false, petitefille: true },
-    timers: { night: 45, witch: 25, day: 150, vote: 45, hunter: 20 },
+    timers: { night: 30, witch: 30, day: 150, vote: 45, hunter: 20 }, // night = durée du tour de chaque rôle
   },
   day: 0,
   timer: null, timerFn: null, timerEnd: 0,
@@ -115,7 +115,8 @@ const get = id => game.players.get(id);
 const isWolf = p => p && p.role === 'loup';
 const isNight = () => game.phase === 'night' || game.phase === 'witch';
 const isGirl = p => p && p.role === 'petitefille';
-const peeking = p => isGirl(p) && p.alive && isNight() && p.peek && p.peek.open;
+const step = () => (game.phase === 'night' && game.night ? game.night.step : null); // rôle dont c'est le tour
+const peeking = p => isGirl(p) && p.alive && step() === 'loups' && p.peek && p.peek.open;
 // position (px) des deux fenêtres de façade : [0] gauche, [1] droite (vues de l'intérieur)
 const WIN_LOCAL = [35, -35], FRONT = 46;
 function windowPos(h, win) {
@@ -148,7 +149,7 @@ function canHear(listener, speaker) {
   const near = dist(listener, speaker) <= HEAR_RADIUS;
   if (!speaker.alive) return !listener.alive;          // les fantômes ne parlent qu'aux fantômes
   if (!listener.alive) return near;                     // les fantômes entendent les vivants proches
-  if (isNight()) return isWolf(speaker) && near && (isWolf(listener) || peeking(listener)); // la nuit, seuls les loups parlent (et la Petite Fille écoute)
+  if (isNight()) return isWolf(speaker) && step() === 'loups' && near && (isWolf(listener) || peeking(listener)); // la nuit, seuls les loups parlent (et la Petite Fille écoute)
   if (game.phase === 'vote') return true; // au conseil, tout le cercle s'entend
   return near;
 }
@@ -159,17 +160,17 @@ function canSee(viewer, target) {
   if (!viewer.alive) return true;
   if (!target.alive) return false;
   if (isNight()) {
-    if (isWolf(viewer)) return true; // les loups rôdent et voient le village
+    if (isWolf(viewer)) return isWolf(target); // les loups ne voient que la meute (pas la Voyante)
     if (peeking(viewer)) return isWolf(target) && inCone(viewer, target);
     return false; // les villageois dorment chez eux
   }
   return true;
 }
 // la Voyante peut sortir la nuit pour ouvrir UNE boîte aux lettres
-const seerRoaming = p => game.phase === 'night' && p.alive && p.role === 'voyante' && game.night && !game.night.seerDone;
+const seerRoaming = p => step() === 'voyante' && p.alive && p.role === 'voyante' && !game.night.seerDone;
 function canMove(p) {
   if (game.phase === 'lobby' || game.phase === 'end' || !p.alive) return true;
-  if (isNight()) return isWolf(p) || seerRoaming(p);
+  if (isNight()) return (isWolf(p) && step() === 'loups') || seerRoaming(p);
   if (game.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
 }
@@ -220,12 +221,13 @@ function viewFor(p) {
   if (game.lovers && (seeAll || p.role === 'cupidon' || game.lovers.includes(p.id))) v.lovers = game.lovers;
   const n = game.night;
   if (isNight() && n && p.alive) {
-    if (isWolf(p)) v.wolfVotes = n.wolfVotes;
+    if (isWolf(p)) { v.wolfVotes = n.wolfVotes; v.scratched = [...new Set(Object.values(n.wolfVotes))].map(id => get(id)?.house?.i); }
     if (p.role === 'voyante') v.seerTarget = n.seer;
     if (isGirl(p)) { v.peek = !!(p.peek && p.peek.open); v.peekWin = p.peek ? p.peek.win : 0; v.spotted = !!n.spotted; }
     if (p.role === 'cupidon' && game.day === 1) v.cupid = n.cupid;
     if (p.role === 'sorciere' && game.phase === 'witch') v.witch = { victim: n.victim, potions: game.potions, done: n.witchDone };
   }
+  if (isNight() && n) v.step = n.step;
   if (isNight() && n && !p.alive) { v.wolfVotes = n.wolfVotes; v.wolfVictim = n.victim; } // les fantômes suivent tout
   if (game.phase === 'vote') v.votes = game.votes;
   if (game.phase === 'day') v.ready = [...game.readyVote];
@@ -285,27 +287,49 @@ function countRoles(roles) {
   return Object.entries(c).map(([r, k]) => `${k} ${ROLE_INFO[r].name}`).join(', ');
 }
 
+// La nuit se joue en tours : chaque rôle a son propre chrono (30 s par défaut),
+// et son tour se termine dès que l'action est faite.
+const NIGHT_STEPS = ['cupidon', 'voyante', 'loups'];
+const STEP_LABEL = { cupidon: '💘 Cupidon se réveille', voyante: '🔮 La Voyante se réveille', loups: '🐺 Les Loups-Garous se réveillent' };
 function startNight() {
   game.day++;
   game.phase = 'night';
-  game.night = { wolfVotes: {}, seer: null, seerDone: false, cupid: null, victim: null,
+  game.night = { step: null, wolfVotes: {}, seer: null, seerDone: false, cupid: null, victim: null,
     witchSave: false, witchKill: null, witchDone: false, detect: 0, spotted: false, anon: new Map() };
-  // chacun rentre chez soi pour la nuit (les loups devront sortir discrètement)
-  for (const p of all()) p.peek = { open: false, angle: Math.PI / 2 };
-  for (const p of alive()) teleport(p, p.house.x, p.house.y);
-  sys(`🌙 Nuit ${game.day} : chacun rentre chez soi et le village s'endort. Chaque rôle doit agir avant la fin du chrono !`, 'phase');
-  setTimer(game.settings.timers.night, endNightMain);
+  for (const p of all()) p.peek = { open: false, angle: Math.PI / 2, win: 0 };
+  for (const p of alive()) teleport(p, p.house.x, p.house.y); // chacun rentre chez soi
+  sys(`🌙 Nuit ${game.day} : chacun rentre chez soi et le village s'endort.`, 'phase');
+  nextNightStep();
+}
+function stepActive(st) {
+  const a = alive();
+  if (st === 'cupidon') return game.day === 1 && a.some(p => p.role === 'cupidon');
+  if (st === 'voyante') return a.some(p => p.role === 'voyante');
+  if (st === 'loups') return a.some(isWolf);
+  return false;
+}
+function nextNightStep() {
+  const n = game.night;
+  let i = n.step ? NIGHT_STEPS.indexOf(n.step) + 1 : 0;
+  while (i < NIGHT_STEPS.length && !stepActive(NIGHT_STEPS[i])) i++;
+  if (i >= NIGHT_STEPS.length) { n.step = null; return endNightMain(); }
+  n.step = NIGHT_STEPS[i];
+  sys(`${STEP_LABEL[n.step]}… ${game.settings.timers.night} s pour agir.`, 'phase');
+  setTimer(game.settings.timers.night, endStep);
   broadcastState();
 }
-
-function nightMainDone() {
-  const n = game.night, a = alive();
-  if (a.filter(isWolf).some(w => !(w.id in n.wolfVotes))) return false;
-  if (a.some(p => p.role === 'voyante') && !n.seerDone) return false;
-  if (game.day === 1 && a.some(p => p.role === 'cupidon') && !n.cupid) return false;
-  return true;
+function endStep() {
+  const n = game.night;
+  if (!n || game.phase !== 'night') return;
+  // fin du tour : chacun retourne dormir chez soi
+  for (const p of alive()) {
+    if ((n.step === 'voyante' && p.role === 'voyante') || (n.step === 'loups' && isWolf(p))) teleport(p, p.house.x, p.house.y);
+    if (n.step === 'loups' && p.peek) p.peek.open = false;
+  }
+  nextNightStep();
 }
-function checkNightEarly() { if (game.phase === 'night' && nightMainDone()) setTimer(3, endNightMain); }
+// le rôle a agi : on passe au tour suivant sans attendre la fin des 30 s
+function stepDone(delay = 2) { if (game.phase === 'night') setTimer(delay, endStep); }
 
 function endNightMain() {
   const n = game.night;
@@ -509,7 +533,7 @@ function attach(socket, joinData) {
     if (!text) return;
     const msg = { from: me.id, name: me.name, color: me.color, text, ghost: !me.alive,
       wolf: isNight() && isWolf(me) && me.alive };
-    if (isNight() && me.alive && !isWolf(me)) return sys('Vous dormez… impossible de parler la nuit.', 'warn', me.id);
+    if (isNight() && me.alive && !(isWolf(me) && step() === 'loups')) return sys('Vous dormez… impossible de parler la nuit.', 'warn', me.id);
     for (const q of all()) {
       if (!q.connected || !(q.id === me.id || canHear(q, me))) continue;
       if (msg.wolf && peeking(q) && dist(q, me) > PEEK_IDENTIFY) io.to(q.socketId).emit('chat', { ...msg, from: anonId(me), name: 'Loup ?', color: '#888888' });
@@ -537,17 +561,26 @@ function attach(socket, joinData) {
   const nightActor = role => game.phase === 'night' && me.alive && me.role === role;
   const aliveTarget = t => { const p = get(t); return p && p.alive ? p : null; };
 
-  socket.on('wolf-vote', guard(t => {
-    if (!nightActor('loup')) return;
-    const p = aliveTarget(t);
+  // les loups griffent la maison de leur victime (il faut être tout près)
+  socket.on('scratch', guard(i => {
+    if (!nightActor('loup') || step() !== 'loups') return;
+    const h = HOUSES[i];
+    const p = h && alive().find(q => q.house === h);
     if (!p || isWolf(p)) return;
+    if (dist(me, h) > 120) return sys('Approchez-vous de la maison pour la griffer.', 'warn', me.id);
     game.night.wolfVotes[me.id] = p.id;
-    for (const w of alive()) if (isWolf(w) && w.id !== me.id) sys(`🐺 ${me.name} veut dévorer ${p.name}.`, 'wolf', w.id);
-    broadcastState(); checkNightEarly();
+    for (const w of alive()) if (isWolf(w)) sys(`🐾 ${w.id === me.id ? 'Vous griffez' : me.name + ' griffe'} la maison de ${p.name}.`, 'wolf', w.id);
+    broadcastState();
+    // toute la meute a griffé la même maison : le choix est fait
+    const wolves = alive().filter(isWolf);
+    if (wolves.every(w => game.night.wolfVotes[w.id] === p.id)) {
+      for (const w of wolves) sys(`🐺 Toute la meute a griffé la maison de ${p.name} : le choix est fait.`, 'wolf', w.id);
+      stepDone(2);
+    }
   }));
   // la Voyante ouvre la boîte aux lettres d'une maison : elle y lit le rôle de l'habitant
   socket.on('seer-mailbox', guard(i => {
-    if (!nightActor('voyante') || game.night.seerDone) return;
+    if (!nightActor('voyante') || step() !== 'voyante' || game.night.seerDone) return;
     const h = HOUSES[i];
     const p = h && all().find(q => q.house === h && q.alive && q.id !== me.id);
     if (!p) return sys('Cette boîte aux lettres est vide.', 'warn', me.id);
@@ -559,12 +592,11 @@ function attach(socket, joinData) {
     sys(`🔮 Dans la boîte aux lettres : ${p.name} est ${roleName(p.role)}. Vous rentrez dormir…`, 'seer', me.id);
     broadcastState();
     setTimeout(() => { // elle retourne se coucher
-      if (game.phase === 'night' || game.phase === 'witch') if (me.alive) teleport(me, me.house.x, me.house.y);
-      checkNightEarly();
+      if (step() === 'voyante') stepDone(0.1); // elle rentre dormir, tour suivant
     }, 4500);
   }));
   socket.on('peek', guard(({ open, angle, win } = {}) => {
-    if (!isNight() || !me.alive || !isGirl(me) || game.night.spotted || !me.house) return;
+    if (step() !== 'loups' || !me.alive || !isGirl(me) || game.night.spotted || !me.house) return;
     const was = me.peek && `${me.peek.open}:${me.peek.win}`;
     // on ne peut regarder que vers l'extérieur, à travers la fenêtre
     let da = Number.isFinite(angle) ? Math.atan2(Math.sin(angle - me.house.face), Math.cos(angle - me.house.face)) : 0;
@@ -573,12 +605,12 @@ function attach(socket, joinData) {
     if (was !== `${me.peek.open}:${me.peek.win}`) broadcastState();
   }));
   socket.on('cupid', guard(ids => {
-    if (!nightActor('cupidon') || game.day !== 1 || game.night.cupid || !Array.isArray(ids)) return;
+    if (!nightActor('cupidon') || step() !== 'cupidon' || game.night.cupid || !Array.isArray(ids)) return;
     const ps = [...new Set(ids)].map(aliveTarget).filter(Boolean);
     if (ps.length !== 2) return;
     game.night.cupid = ps.map(p => p.id);
     sys(`💘 ${ps[0].name} et ${ps[1].name} sont désormais amoureux.`, 'seer', me.id);
-    broadcastState(); checkNightEarly();
+    broadcastState(); stepDone(1.5);
   }));
   socket.on('witch', guard(({ save, kill: k } = {}) => {
     if (game.phase !== 'witch' || !me.alive || me.role !== 'sorciere' || game.night.witchDone) return;
