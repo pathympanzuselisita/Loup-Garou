@@ -93,7 +93,7 @@ const game = {
   settings: {
     wolves: 0, // 0 = automatique
     roles: { voyante: true, sorciere: true, chasseur: true, cupidon: false, petitefille: true },
-    timers: { night: 30, witch: 30, day: 150, vote: 45, hunter: 20 }, // night = durée du tour de chaque rôle
+    timers: { night: 30, witch: 30, day: 150, vote: 45, hunter: 30 }, // night = durée du tour de chaque rôle
   },
   day: 0,
   timer: null, timerFn: null, timerEnd: 0,
