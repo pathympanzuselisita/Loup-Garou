@@ -1,0 +1,16 @@
+{
+  "name": "loups-de-brumeval",
+  "version": "1.0.0",
+  "description": "Jeu de loups-garous multijoueur avec chat de proximité",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.22.3",
+    "selfsigned": "^2.4.1",
+    "socket.io": "^4.8.4",
+    "three": "^0.170.0"
+  }
+}

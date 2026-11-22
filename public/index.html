@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Les Loups de Brumeval</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="login">
+  <div class="card">
+    <h1>🐺 Les Loups de Brumeval</h1>
+    <p class="sub">Loups-garous multijoueur · chat de proximité · nuits chronométrées</p>
+    <input id="nameIn" maxlength="18" placeholder="Votre pseudo" autocomplete="off">
+    <button id="joinBtn">Entrer dans le village</button>
+    <p id="secureHint" class="hint" hidden>⚠️ Le micro ne fonctionne qu'en <b>https</b> (ou sur localhost). Utilisez l'adresse https affichée par le serveur.</p>
+    <div class="howto">
+      <b>Comment jouer</b>
+      <ul>
+        <li><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> / flèches : se déplacer</li>
+        <li><kbd>Entrée</kbd> : écrire dans le chat — seuls les joueurs proches vous entendent</li>
+        <li>🎙️ Activez le vocal : le volume dépend de la distance</li>
+        <li>La nuit, chaque rôle doit agir <b>avant la fin du chrono</b>, sinon son action est perdue</li>
+        <li>Les loups se retrouvent à la tanière et parlent entre eux ; les villageois dorment</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="game" hidden>
+  <canvas id="cv"></canvas>
+  <div id="topbar">
+    <span id="phaseLbl"></span>
+    <span id="timerLbl"></span>
+    <span class="grow"></span>
+    <button id="voiceBtn" title="Rejoindre le chat vocal de proximité">🎙️ Activer le vocal</button>
+    <button id="muteBtn" hidden>🔊 Micro ouvert</button>
+  </div>
+  <div id="rolecard" hidden></div>
+  <div id="centerMsg" hidden></div>
+  <div id="camHint">🖱️ Glisser : tourner la caméra · Molette : zoom</div>
+  <div id="panel">
+    <div id="panelBody"></div>
+    <h3>Joueurs <span id="pcount"></span></h3>
+    <ul id="plist"></ul>
+  </div>
+  <div id="chat">
+    <div id="chatlog"></div>
+    <input id="chatIn" maxlength="300" placeholder="Entrée pour parler (proximité)…" autocomplete="off">
+  </div>
+  <div id="modal" hidden>
+    <div class="box"><h2 id="modalTitle"></h2><div id="modalText"></div><button id="modalOk">OK</button></div>
+  </div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
+<script type="module" src="client.js"></script>
+</body>
+</html>
