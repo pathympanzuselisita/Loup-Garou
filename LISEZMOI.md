@@ -58,7 +58,8 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
   se parlent entre eux, avec une **voix déformée** pour qu'on ne les reconnaisse pas.
 - **Petite Fille** : la nuit, **Q** ou **D** entrouvre le rideau de sa fenêtre gauche ou droite
   (**E** pour refermer). Elle regarde alors dehors **à la première personne**, par une fente
-  étroite, en bougeant la souris, et entend les loups proches. De loin, un loup n'est qu'une
+  étroite, en bougeant la souris, et entend les loups proches. Aucune lumière ne sort de la
+  maison : seul le mouvement du rideau peut la trahir. De loin, un loup n'est qu'une
   silhouette : elle ne le reconnaît que s'il passe tout près. Mais les loups voient le rideau
   s'entrouvrir, et s'ils restent trop près trop longtemps, la meute découvre qui elle est.
 - Chaque maison a deux fenêtres à rideaux et une **boîte aux lettres** avec le nom de l'habitant.
@@ -76,7 +77,7 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
 |---|---|
 | 🐺 Loup-Garou | Vote chaque nuit pour dévorer un villageois |
 | 🧑‍🌾 Villageois | Aucun, mais vote le jour |
-| 🔮 Voyante | Découvre le rôle d'un joueur par nuit |
+| 🔮 Voyante | La nuit, sort de chez elle et ouvre la boîte aux lettres d'une maison (E) pour lire le rôle de l'habitant, puis rentre dormir. Les rôles découverts restent affichés pour elle |
 | 🧪 Sorcière | Une potion de vie, une potion de mort |
 | 🏹 Chasseur | En mourant, abat un joueur |
 | 💘 Cupidon | Lie deux amoureux la 1ʳᵉ nuit |

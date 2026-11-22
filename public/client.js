@@ -157,6 +157,7 @@ socket.on('chat', m => {
   addLog(`<b style="color:${esc(m.color)}">${m.ghost ? '👻 ' : ''}${m.wolf ? '🐺 ' : ''}${esc(m.name)}</b> : ${esc(m.text)}`, m.ghost ? 'ghost' : m.wolf ? 'wolf' : '');
   bubbles.set(m.from, { text: m.text, until: Date.now() + 4500 + m.text.length * 50 });
 });
+socket.on('mailbox-open', m => { const r = R(m.role); if (scene3d) scene3d.openMailbox(m.i, `${m.name} : ${r ? r.icon + ' ' + r.name : '?'}`); });
 socket.on('sys', m => addLog(esc(m.text), m.kind === 'warn' ? 'sys warnm' : 'sys ' + m.kind));
 socket.on('announce', m => showModal(m.title, m.text));
 
@@ -200,6 +201,7 @@ window.addEventListener('keydown', e => {
     if (k === 'd' || k === 'arrowright') return openCurtain(1);
     if (k === 'e' || k === 's' || k === 'arrowdown') return closeCurtain();
   }
+  if (e.key.toLowerCase() === 'e' && !e.repeat) { const mb = nearMailbox(); if (mb) socket.emit('seer-mailbox', mb.house.i); }
   keys.add(e.key.toLowerCase());
   if (e.key.startsWith('Arrow')) e.preventDefault();
 });
@@ -259,9 +261,32 @@ const amWolf = () => S && S.me.role === 'loup';
 function canMoveClient() {
   if (!S) return false;
   if (S.phase === 'lobby' || S.phase === 'end' || !S.me.alive) return true;
-  if (isNightPhase()) return amWolf();
+  if (isNightPhase()) return amWolf() || seerRoaming();
   if (S.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
+}
+// ------------------------------------------------------- Voyante
+const seerRoaming = () => S && S.phase === 'night' && S.me.alive && S.me.role === 'voyante' && !S.seerTarget;
+function mailboxPos(h) { const sf = Math.sin(h.face), cf = Math.cos(h.face); return { x: h.x + 50 * sf + 72 * cf, y: h.y - 50 * cf + 72 * sf }; }
+// boîte aux lettres la plus proche (habitée par un autre joueur vivant)
+function nearMailbox() {
+  if (!seerRoaming()) return null;
+  let best = null, bd = 70;
+  for (const p of S.players) {
+    if (!p.house || !p.alive || p.id === myId) continue;
+    const m = mailboxPos(p.house), d = Math.hypot(m.x - me.x, m.y - me.y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+// Voyante encore dehors (avant ou juste après avoir lu une boîte aux lettres)
+function seerOutside() {
+  if (!S || !isNightPhase() || !S.me.alive || S.me.role !== 'voyante') return false;
+  const h = myHouse(); return !!h && Math.hypot(me.x - h.x, me.y - h.y) > 62;
+}
+function roleText(p) {
+  if (!S || S.phase === 'lobby' || !p.role) return '';
+  const r = R(p.role); return r ? `${r.icon} ${r.name}` : '';
 }
 function posOf(id) {
   if (id === myId) return me;
@@ -339,8 +364,9 @@ function renderPanel() {
         ${mine ? '' : '<p class="warn">⚠ Vous n\'avez pas encore voté !</p>'}
         ${targetBtns(living.filter(p => p.role !== 'loup'), 'wolf-vote', { sel: p => mine === p.id, extra: p => wolfCount(p.id) })}`;
     } else if (role === 'voyante') {
-      if (S.seerTarget) { const t = P(S.seerTarget); h += `<h4>🔮 Vision</h4><p class="done">${esc(t.name)} est ${R(t.role)?.icon} ${esc(R(t.role)?.name || '?')}.</p><p>Rendormez-vous…</p>`; }
-      else h += `<h4>🔮 Qui voulez-vous sonder ?</h4><p class="warn">⚠ Choisissez avant la fin de la nuit !</p>${targetBtns(others, 'seer', { extra: p => p.role ? R(p.role).icon : '' })}`;
+      if (S.seerTarget) { const t = P(S.seerTarget); h += `<h4>🔮 Vision</h4><p class="done">${esc(t.name)} est ${R(t.role)?.icon} ${esc(R(t.role)?.name || '?')}.</p><p>Vous rentrez dormir… Son nom et son rôle resteront affichés pour vous.</p>`; }
+      else h += `<h4>🔮 Sortez lire une boîte aux lettres</h4><p>Sortez de chez vous, approchez-vous de la boîte aux lettres de la maison de votre choix et appuyez sur <b>E</b> : vous découvrirez le rôle de son habitant. Une seule boîte par nuit.</p>
+        <p class="warn">⚠ Avant la fin de la nuit… et méfiez-vous, les loups rôdent et peuvent vous voir dehors !</p>`;
     } else if (role === 'petitefille') {
       h += girlPanel();
     } else if (role === 'cupidon' && S.day === 1) {
@@ -493,7 +519,9 @@ function frame(t) {
   // message central
   let msg = '';
   if (isNightPhase() && S.me.alive && !amWolf()) {
-    msg = isGirlNight() ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
+    if (seerRoaming()) { const mb = nearMailbox(); msg = mb ? `📬 E : ouvrir la boîte aux lettres de ${mb.name}` : '🔮 Allez jusqu\'à une boîte aux lettres'; }
+    else if (seerOutside()) msg = '🔮 Vous rentrez dormir…';
+    else msg = isGirlNight() ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
       : needsAction() ? '🌙 Agissez avant la fin de la nuit ! →' : '💤 Vous dormez dans votre maison…';
   }
   const cm = $('#centerMsg');
@@ -507,7 +535,8 @@ function frame(t) {
     if (!(visible.has(p.id) || p.id === myId)) continue;
     const pos = posOf(p.id) || me;
     const b = bubbles.get(p.id);
-    entities.push({ id: p.id, name: `${p.name} · Nv ${p.level || 1}`, color: p.color, alive: p.alive, role: S.phase === 'lobby' ? null : p.role, x: pos.x, y: pos.y,
+    const rt = p.id !== myId ? roleText(p) : '';
+    entities.push({ id: p.id, name: rt ? `${p.name} · ${rt}` : `${p.name} · Nv ${p.level || 1}`, color: p.color, alive: p.alive, role: S.phase === 'lobby' ? null : p.role, x: pos.x, y: pos.y,
       isMe: p.id === myId, speaking: (voice.levels.get(p.id) || 0) > 0.04, bubble: b && b.until > now ? b.text : null,
       votes: S.phase === 'vote' ? Object.values(S.votes || {}).filter(t => t === p.id).length : 0 });
   }
@@ -517,9 +546,9 @@ function frame(t) {
   }
   updateCurtainView();
   const owners = {};
-  for (const p of S.players) if (p.house) owners[p.house.i] = p;
+  for (const p of S.players) if (p.house) owners[p.house.i] = { ...p, roleText: p.id !== myId ? roleText(p) : '' };
   scene3d.frame(dt, {
-    phase: S.phase, night: isNightPhase(), myVote: S.phase === 'vote' ? (S.votes || {})[myId] : null, alive: S.me.alive, wolf: amWolf(), me, entities, owners,
+    phase: S.phase, night: isNightPhase(), seerRoam: seerOutside(), myVote: S.phase === 'vote' ? (S.votes || {})[myId] : null, alive: S.me.alive, wolf: amWolf(), me, entities, owners,
     peek: isGirlNight() && S.peek ? { angle: peekAngle, pitch: peekPitch, win: peekWin, half: CFG.peek.half, range: CFG.peek.range } : null,
     ajar: voice.ajar && isNightPhase() ? voice.ajar : null,
     showRing: S.phase !== 'lobby' && S.phase !== 'end' && (!isNightPhase() || amWolf() || !S.me.alive),

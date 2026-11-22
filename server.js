@@ -47,7 +47,7 @@ const ROLE_INFO = {
   villageois: { name: 'Villageois', team: 'village', icon: '🧑‍🌾',
                 desc: "Vous n'avez aucun pouvoir, mais votre voix compte : discutez, démasquez les loups et votez pour les éliminer." },
   voyante:    { name: 'Voyante', team: 'village', icon: '🔮',
-                desc: "Chaque nuit, vous pouvez découvrir le vrai rôle d'un joueur. Attention : il faut agir avant la fin de la nuit !" },
+                desc: "Chaque nuit, sortez de chez vous et ouvrez la boîte aux lettres d'une maison (touche E) : vous y lisez le rôle de son habitant. Ensuite vous rentrez dormir. Les joueurs démasqués gardent leur nom et leur rôle affichés au-dessus de leur tête pour vous. Attention : les loups rôdent et peuvent vous voir dehors !" },
   sorciere:   { name: 'Sorcière', team: 'village', icon: '🧪',
                 desc: "Vous avez une potion de vie (sauver la victime des loups) et une potion de mort (tuer quelqu'un). Chacune ne sert qu'une fois dans la partie." },
   chasseur:   { name: 'Chasseur', team: 'village', icon: '🏹',
@@ -131,6 +131,12 @@ function inCone(girl, t) {
   da = Math.atan2(Math.sin(da), Math.cos(da));
   return Math.abs(da) <= PEEK_HALF_ANGLE;
 }
+// boîte aux lettres devant chaque maison (même position que dans le rendu 3D)
+function mailboxPos(h) {
+  const lx = 50, lz = 72, sf = Math.sin(h.face), cf = Math.cos(h.face);
+  return { x: h.x + lx * sf + lz * cf, y: h.y - lx * cf + lz * sf };
+}
+const MAILBOX_REACH = 70;
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const roleName = r => (ROLE_INFO[r] ? ROLE_INFO[r].icon + ' ' + ROLE_INFO[r].name : '?');
 
@@ -159,9 +165,11 @@ function canSee(viewer, target) {
   }
   return true;
 }
+// la Voyante peut sortir la nuit pour ouvrir UNE boîte aux lettres
+const seerRoaming = p => game.phase === 'night' && p.alive && p.role === 'voyante' && game.night && !game.night.seerDone;
 function canMove(p) {
   if (game.phase === 'lobby' || game.phase === 'end' || !p.alive) return true;
-  if (isNight()) return isWolf(p);
+  if (isNight()) return isWolf(p) || seerRoaming(p);
   if (game.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
 }
@@ -301,6 +309,8 @@ function checkNightEarly() { if (game.phase === 'night' && nightMainDone()) setT
 
 function endNightMain() {
   const n = game.night;
+  // une Voyante restée dehors rentre chez elle
+  for (const p of alive()) if (p.role === 'voyante' && dist(p, p.house) > 62) teleport(p, p.house.x, p.house.y);
   // victime des loups : majorité, égalité tirée au sort
   const tally = {};
   for (const [w, t] of Object.entries(n.wolfVotes)) { const wp = get(w); if (wp && wp.alive && t) tally[t] = (tally[t] || 0) + 1; }
@@ -535,14 +545,23 @@ function attach(socket, joinData) {
     for (const w of alive()) if (isWolf(w) && w.id !== me.id) sys(`🐺 ${me.name} veut dévorer ${p.name}.`, 'wolf', w.id);
     broadcastState(); checkNightEarly();
   }));
-  socket.on('seer', guard(t => {
+  // la Voyante ouvre la boîte aux lettres d'une maison : elle y lit le rôle de l'habitant
+  socket.on('seer-mailbox', guard(i => {
     if (!nightActor('voyante') || game.night.seerDone) return;
-    const p = aliveTarget(t);
-    if (!p || p.id === me.id) return;
+    const h = HOUSES[i];
+    const p = h && all().find(q => q.house === h && q.alive && q.id !== me.id);
+    if (!p) return sys('Cette boîte aux lettres est vide.', 'warn', me.id);
+    const mb = mailboxPos(h);
+    if (dist(me, mb) > MAILBOX_REACH) return sys('Approchez-vous de la boîte aux lettres.', 'warn', me.id);
     game.night.seer = p.id; game.night.seerDone = true;
     me.seen[p.id] = p.role;
-    sys(`🔮 Votre boule de cristal révèle : ${p.name} est ${roleName(p.role)}.`, 'seer', me.id);
-    broadcastState(); checkNightEarly();
+    socket.emit('mailbox-open', { i, name: p.name, role: p.role });
+    sys(`🔮 Dans la boîte aux lettres : ${p.name} est ${roleName(p.role)}. Vous rentrez dormir…`, 'seer', me.id);
+    broadcastState();
+    setTimeout(() => { // elle retourne se coucher
+      if (game.phase === 'night' || game.phase === 'witch') if (me.alive) teleport(me, me.house.x, me.house.y);
+      checkNightEarly();
+    }, 4500);
   }));
   socket.on('peek', guard(({ open, angle, win } = {}) => {
     if (!isNight() || !me.alive || !isGirl(me) || game.night.spotted || !me.house) return;

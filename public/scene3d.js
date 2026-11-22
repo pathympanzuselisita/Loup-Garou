@@ -447,6 +447,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     vote:  { bg: '#e39a64', fogN: 50, fogF: 150, hemi: .7, sun: 1.7, sunCol: '#ffb070', lamps: .6, win: .4 },
     wolf:  { bg: '#0b1426', fogN: 14, fogF: 55, hemi: .32, sun: .45, sunCol: '#8fa8ff', lamps: 1, win: 1 },
     sleep: { bg: '#020309', fogN: 2, fogF: 11, hemi: .05, sun: .0, sunCol: '#8fa8ff', lamps: 1, win: 1 },
+    seer:  { bg: '#070c18', fogN: 8, fogF: 34, hemi: .16, sun: .2, sunCol: '#8fa8ff', lamps: 1, win: 1 },
     peek:  { bg: '#0b1426', fogN: 12, fogF: 48, hemi: .3, sun: .4, sunCol: '#8fa8ff', lamps: 1, win: 1 },
     ghost: { bg: '#141c33', fogN: 25, fogF: 90, hemi: .45, sun: .5, sunCol: '#9fb3ff', lamps: 1, win: 1 },
   };
@@ -497,7 +498,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     const night = V.night;
     let mood = 'day';
     if (V.phase === 'vote' || V.phase === 'hunter') mood = 'vote';
-    if (night) mood = !V.alive ? 'ghost' : V.wolf ? 'wolf' : V.peek ? 'peek' : 'sleep';
+    if (night) mood = !V.alive ? 'ghost' : V.wolf ? 'wolf' : V.peek ? 'peek' : V.seerRoam ? 'seer' : 'sleep';
     blendAmbience(mood, dt);
 
     const meW = toW(V.me.x, V.me.y);
@@ -508,11 +509,11 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     // --- maisons : nom, fenêtres, portes
     for (const h of houses) {
       const o = V.owners[h.h.i];
-      const key = o ? `${o.name}|${o.alive}` : '';
+      const key = o ? `${o.name}|${o.alive}|${o.roleText || ''}` : '';
       if (key !== h.labelKey) {
         h.labelKey = key;
         h.label.children.forEach(c => disposeObj(c)); h.label.clear();
-        if (o) h.label.add(textSprite([(o.alive ? '' : '💀 ') + o.name], { bg: '#000000a8', color: o.alive ? '#fff' : '#aaa', scale: .006 }));
+        if (o) h.label.add(textSprite(o.roleText ? [(o.alive ? '' : '💀 ') + o.name, o.roleText] : [(o.alive ? '' : '💀 ') + o.name], { bg: '#000000a8', color: o.alive ? '#fff' : '#aaa', scale: .006 }));
         h.doorMat.color.set(o ? o.color : '#ffffff').lerp(tmpC.set('#ffffff'), .45);
         // plaque gravée sur la boîte aux lettres
         const g2 = h.plateCv.getContext('2d');
@@ -584,8 +585,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     spot.intensity = 0;
     if (V.ajar && houses[V.ajar.i]) { // lueur derrière le rideau entrouvert
       const hh = houses[V.ajar.i];
-      ajarLight.position.copy(hh.g.localToWorld(new THREE.Vector3(WIN_X[V.ajar.win] || 0, 2.1, hh.d / 2 + .5)));
-      ajarLight.intensity = 10;
+      ajarLight.intensity = 0; // aucune lumière dehors : seul le rideau bouge
     } else ajarLight.intensity = 0;
 
     // --- caméra
@@ -595,7 +595,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
       wantPitch = Math.max(cam.pitch, .85); wantDist = Math.max(cam.dist, 17);
       tgt.lerp(C, .45);
     }
-    if (inside && night && V.alive && !V.wolf) { // dans sa maison la nuit : vue plongeante
+    if (inside && night && V.alive && !V.wolf && !V.seerRoam) { // dans sa maison la nuit : vue plongeante
       wantPitch = 1.25; wantDist = 12;
     }
     if (V.peek && inside) {
@@ -630,8 +630,16 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     if (best && bd < 160) cam.yaw = Math.atan2(Math.cos(best.face), Math.sin(best.face));
   }
   // au conseil : caméra derrière le joueur, tournée vers le feu
+  // la Voyante ouvre une boîte aux lettres : le drapeau se lève et le rôle apparaît
+  function openMailbox(i, text) {
+    const h = houses[i]; if (!h) return;
+    const card = textSprite(['📬 ' + text], { bg: '#f3e6c4', color: '#2b1d08', font: '700 36px Georgia, serif', scale: .008, depthTest: false, renderOrder: 20 });
+    card.position.set(2.5, 3.6, h.d / 2 + 1.3); h.g.add(card);
+    h.flag.rotation.z = -Math.PI / 2;
+    setTimeout(() => { h.g.remove(card); disposeObj(card); h.flag.rotation.z = 0; }, 5000);
+  }
   function faceCenterFrom(x, y) { cam.yaw = Math.atan2(x - cfg.center.x, y - cfg.center.y); }
   // demi-angle horizontal du champ de la caméra (pour l'ouverture du rideau à l'écran)
   function hHalfFov() { return Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect); }
-  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
+  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, openMailbox, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
 }
