@@ -264,6 +264,9 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   // -------------------------------------------------------------- maisons
   const ROOFS = ['#b55a3c', '#6d7a86', '#a8823e', '#8b3b2e', '#566b4a'];
   const WALLS = ['#e3d6b8', '#d8c7a4', '#efe5d0', '#cdb894'];
+  const CURTAINS = ['#8e2b2b', '#2f4f7a', '#3f6b3a', '#7a4a8c', '#a0662a', '#5b5b5b'];
+  // fenêtres de façade (x local) : [0] = à gauche vue de l'intérieur, [1] = à droite
+  const WIN_X = [1.75, -1.75];
   const houses = cfg.houses.map((h, i) => buildHouse(h, i));
   function buildHouse(h, i) {
     const g = new THREE.Group();
@@ -278,27 +281,41 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     // socle en pierre + plancher
     add(new THREE.BoxGeometry(w + .3, .4, d + .3), stoneMat, 0, .2, 0);
     add(new THREE.BoxGeometry(w - .2, .05, d - .2), woodMat, 0, .42, 0);
-    // murs (façade avec ouverture de porte)
+    // murs
     add(new THREE.BoxGeometry(w, wh, t), wallMat, 0, .4 + wh / 2, -d / 2 + t / 2);       // arrière
     add(new THREE.BoxGeometry(t, wh, d), wallMat, -w / 2 + t / 2, .4 + wh / 2, 0);       // gauche
     add(new THREE.BoxGeometry(t, wh, d), wallMat, w / 2 - t / 2, .4 + wh / 2, 0);        // droite
-    const dw = 1.2, dh = 2.1, side = (w - dw) / 2;
-    add(new THREE.BoxGeometry(side, wh, t), wallMat, -(dw / 2 + side / 2), .4 + wh / 2, d / 2 - t / 2);
-    add(new THREE.BoxGeometry(side, wh, t), wallMat, dw / 2 + side / 2, .4 + wh / 2, d / 2 - t / 2);
-    add(new THREE.BoxGeometry(dw, wh - dh, t), wallMat, 0, .4 + dh + (wh - dh) / 2, d / 2 - t / 2);
+    // façade percée : porte au centre + deux vraies fenêtres
+    const dw = 1.2, dh = 2.1, WW = .9, WY0 = 1.25, WY1 = 2.15; // fenêtre : largeur, bas, haut (au-dessus du plancher)
+    const front = new THREE.Shape();
+    front.moveTo(-w / 2, 0); front.lineTo(-dw / 2, 0); front.lineTo(-dw / 2, dh); front.lineTo(dw / 2, dh); front.lineTo(dw / 2, 0);
+    front.lineTo(w / 2, 0); front.lineTo(w / 2, wh); front.lineTo(-w / 2, wh); front.closePath();
+    for (const wx of WIN_X) {
+      const hole = new THREE.Path(); hole.moveTo(wx - WW / 2, WY0); hole.lineTo(wx + WW / 2, WY0); hole.lineTo(wx + WW / 2, WY1); hole.lineTo(wx - WW / 2, WY1); hole.closePath();
+      front.holes.push(hole);
+    }
+    const fm = add(new THREE.ExtrudeGeometry(front, { depth: t, bevelEnabled: false }), wallMat, 0, .4, d / 2 - t);
+    fm.material = wallMat;
     // colombages
     for (const x of [-w / 2, w / 2]) for (const z of [-d / 2, d / 2]) add(new THREE.BoxGeometry(.28, wh, .28), beamMat, x, .4 + wh / 2, z);
     for (const z of [-d / 2 - .01, d / 2 + .01]) add(new THREE.BoxGeometry(w + .1, .2, .1), beamMat, 0, .4 + wh - .1, z);
-    add(new THREE.BoxGeometry(w + .1, .16, .1), beamMat, 0, .4 + 1.5, d / 2 + .02).scale.x = 1;
-    // fenêtres (lumineuses la nuit)
-    const winMat = new THREE.MeshStandardMaterial({ color: '#86a9c4', emissive: '#ffb347', emissiveIntensity: 0, roughness: .2 });
-    const wins = [];
-    const win = (x, z, ry) => {
-      const fr = add(new THREE.BoxGeometry(1, 1, .12), beamMat, x, 2.1, z); fr.rotation.y = ry;
-      const gl = add(new THREE.PlaneGeometry(.78, .78), winMat, x + Math.sin(ry) * .07, 2.1, z + Math.cos(ry) * .07); gl.rotation.y = ry; gl.castShadow = false;
-      wins.push(gl);
-    };
-    win(-1.75, d / 2, 0); win(1.75, d / 2, 0); win(-w / 2, 0, -Math.PI / 2); win(w / 2, 0, Math.PI / 2);
+    // fenêtres : cadre, vitre, rideaux intérieurs (gauche/droite vus de l'intérieur)
+    const glassMat = new THREE.MeshStandardMaterial({ color: '#9cc3dd', transparent: true, opacity: .22, roughness: .05, depthWrite: false });
+    const curtainMat = new THREE.MeshStandardMaterial({ color: CURTAINS[i % CURTAINS.length], emissive: '#ffb347', emissiveIntensity: 0, roughness: 1, side: THREE.DoubleSide });
+    const windows = WIN_X.map(wx => {
+      const cy = .4 + (WY0 + WY1) / 2, zf = d / 2 + .04;
+      add(new THREE.BoxGeometry(WW + .2, .12, .14), beamMat, wx, .4 + WY0 - .06, zf);      // appui
+      add(new THREE.BoxGeometry(WW + .2, .12, .14), beamMat, wx, .4 + WY1 + .06, zf);      // linteau
+      add(new THREE.BoxGeometry(.1, WY1 - WY0, .14), beamMat, wx - WW / 2 - .05, cy, zf);
+      add(new THREE.BoxGeometry(.1, WY1 - WY0, .14), beamMat, wx + WW / 2 + .05, cy, zf);
+      const gl = add(new THREE.PlaneGeometry(WW, WY1 - WY0), glassMat, wx, cy, d / 2 - t / 2 + .04); gl.castShadow = false;
+      add(new THREE.CylinderGeometry(.03, .03, WW + .6, 6), beamMat, wx, .4 + WY1 + .12, d / 2 - t - .08).rotation.z = Math.PI / 2; // tringle
+      const panels = [-1, 1].map(sd => {
+        const pnl = add(new THREE.BoxGeometry(WW / 2 + .08, WY1 - WY0 + .2, .04), curtainMat, wx + sd * WW / 4, cy, d / 2 - t - .08);
+        pnl.castShadow = false; pnl.userData.sd = sd; return pnl;
+      });
+      return { wx, panels, open: 0, target: 0 };
+    });
     // pignons + toit
     const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, 2.1); gable.closePath();
     const gGeo = new THREE.ExtrudeGeometry(gable, { depth: w - .1, bevelEnabled: false });
@@ -324,11 +341,23 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     add(new THREE.CylinderGeometry(.08, .1, .7, 6), woodMat, 1.3, .77, -.6);
     const rug = new THREE.Mesh(new THREE.CircleGeometry(.9, 20), new THREE.MeshStandardMaterial({ color: '#8b2f2f' }));
     rug.rotation.x = -Math.PI / 2; rug.position.set(.3, .46, .5); body.add(rug);
-    // pancarte avec le nom (mise à jour plus tard)
-    const label = new THREE.Group(); label.position.set(0, .4 + wh + 2.9, 0); g.add(label);
+    // boîte aux lettres devant la maison, avec le nom de l'habitant
+    const MB = { x: 2.5, z: d / 2 + 1.3 };
+    const mbMat = new THREE.MeshStandardMaterial({ color: '#6b7b8c', roughness: .6, metalness: .3 });
+    add(new THREE.CylinderGeometry(.06, .07, 1.1, 8), woodMat, MB.x, .55, MB.z, g);
+    add(new THREE.BoxGeometry(.5, .38, .7), mbMat, MB.x, 1.25, MB.z, g);
+    add(new THREE.CylinderGeometry(.25, .25, .7, 12, 1, false, 0, Math.PI), mbMat, MB.x, 1.44, MB.z, g).rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    const flag = add(new THREE.BoxGeometry(.04, .35, .14), new THREE.MeshStandardMaterial({ color: '#c0392b' }), MB.x + .28, 1.45, MB.z - .1, g);
+    const plateCv = document.createElement('canvas'); plateCv.width = 256; plateCv.height = 96;
+    const plateTex = new THREE.CanvasTexture(plateCv); plateTex.colorSpace = THREE.SRGBColorSpace;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(.48, .18), new THREE.MeshStandardMaterial({ map: plateTex, roughness: .7 }));
+    plate.position.set(MB.x, 1.24, MB.z + .36); g.add(plate);
+    const label = new THREE.Group(); label.position.set(MB.x, 1.85, MB.z); g.add(label);
     scene.add(g);
     colliders.push({ x: h.x, y: h.y, r: 62, house: i });
-    return { g, roof, hinge, wins, winMat, doorMat, sheet, label, labelKey: '', owner: null, doorAngle: 0, doorTarget: 0, h };
+    const sf = Math.sin(h.face), cf = Math.cos(h.face);
+    colliders.push({ x: h.x + (MB.x * sf + MB.z * cf) / SC, y: h.y + (-MB.x * cf + MB.z * sf) / SC, r: 12 });
+    return { g, roof, hinge, windows, curtainMat, doorMat, sheet, label, labelKey: '', plateCv, plateTex, flag, owner: null, doorAngle: 0, doorTarget: 0, h, d, t };
   }
 
   // --------------------------------------------------------- personnages
@@ -418,7 +447,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     vote:  { bg: '#e39a64', fogN: 50, fogF: 150, hemi: .7, sun: 1.7, sunCol: '#ffb070', lamps: .6, win: .4 },
     wolf:  { bg: '#0b1426', fogN: 14, fogF: 55, hemi: .32, sun: .45, sunCol: '#8fa8ff', lamps: 1, win: 1 },
     sleep: { bg: '#020309', fogN: 2, fogF: 11, hemi: .05, sun: .0, sunCol: '#8fa8ff', lamps: 1, win: 1 },
-    peek:  { bg: '#020309', fogN: 30, fogF: 75, hemi: .07, sun: .05, sunCol: '#8fa8ff', lamps: .35, win: 1 },
+    peek:  { bg: '#0b1426', fogN: 12, fogF: 48, hemi: .3, sun: .4, sunCol: '#8fa8ff', lamps: 1, win: 1 },
     ghost: { bg: '#141c33', fogN: 25, fogF: 90, hemi: .45, sun: .5, sunCol: '#9fb3ff', lamps: 1, win: 1 },
   };
   const amb = { ...AMB.day, bgC: new THREE.Color(AMB.day.bg), sunC: new THREE.Color(AMB.day.sunCol) };
@@ -483,15 +512,25 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
       if (key !== h.labelKey) {
         h.labelKey = key;
         h.label.children.forEach(c => disposeObj(c)); h.label.clear();
-        if (o) h.label.add(textSprite([(o.alive ? '' : '💀 ') + o.name], { bg: '#000000a8', color: o.alive ? '#fff' : '#aaa', scale: .0075 }));
+        if (o) h.label.add(textSprite([(o.alive ? '' : '💀 ') + o.name], { bg: '#000000a8', color: o.alive ? '#fff' : '#aaa', scale: .006 }));
         h.doorMat.color.set(o ? o.color : '#ffffff').lerp(tmpC.set('#ffffff'), .45);
+        // plaque gravée sur la boîte aux lettres
+        const g2 = h.plateCv.getContext('2d');
+        g2.fillStyle = '#d8c48a'; g2.fillRect(0, 0, 256, 96); g2.strokeStyle = '#7a5a20'; g2.lineWidth = 8; g2.strokeRect(4, 4, 248, 88);
+        g2.fillStyle = '#2b1d08'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+        const nm = o ? o.name : '—'; g2.font = `700 ${nm.length > 10 ? 30 : 42}px Georgia, serif`; g2.fillText(nm, 128, 50);
+        h.plateTex.needsUpdate = true;
+        h.flag.rotation.z = o ? 0 : Math.PI / 2;
       }
-      const lit = o && o.alive ? amb.win : 0;
-      h.winMat.emissiveIntensity = lit * 1.6;
-      h.roof.visible = h !== inside;
-      h.doorTarget = (V.peek && h === inside) ? -0.55 : (V.ajar && Math.hypot(V.ajar.x - h.h.x, V.ajar.y - h.h.y) < 5) ? -0.45 : 0;
-      h.doorAngle += (h.doorTarget - h.doorAngle) * Math.min(1, dt * 4);
-      h.hinge.rotation.y = h.doorAngle;
+      h.curtainMat.emissiveIntensity = (o && o.alive ? amb.win : 0) * .55;
+      h.roof.visible = h !== inside || !!V.peek;
+      h.hinge.rotation.y = 0;
+      // rideaux : ma fenêtre quand j'espionne, ou celle qu'un loup voit s'entrouvrir
+      h.windows.forEach((wn, k) => {
+        wn.target = (V.peek && h === inside && V.peek.win === k) ? 1 : (V.ajar && V.ajar.i === h.h.i && V.ajar.win === k) ? .5 : 0;
+        wn.open += (wn.target - wn.open) * Math.min(1, dt * 3);
+        for (const pnl of wn.panels) { pnl.scale.x = 1 - .6 * wn.open; pnl.position.x = wn.wx + pnl.userData.sd * (.225 + .2 * wn.open); }
+      });
     }
 
     // --- personnages
@@ -542,16 +581,11 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     // --- lumières locales
     lantern.position.set(meW.x, 2.4, meW.z);
     lantern.intensity = night ? (V.wolf ? 6 : 14) : 0;
-    if (V.peek && inside) {
-      const f = inside.h.face, door = toW(inside.h.x + Math.cos(f) * 50, inside.h.y + Math.sin(f) * 50);
-      spot.position.set(door.x, 1.6, door.z);
-      spot.target.position.set(door.x + Math.cos(V.peek.angle) * 20, 0, door.z + Math.sin(V.peek.angle) * 20);
-      spot.angle = V.peek.half; spot.distance = V.peek.range * SC * 1.1; spot.decay = 1; spot.penumbra = .25; spot.intensity = 900;
-    } else spot.intensity = 0;
-    if (V.ajar) {
-      const h = cfg.houses.find(h => Math.hypot(V.ajar.x - h.x, V.ajar.y - h.y) < 5) || V.ajar;
-      const f = h.face ?? 0, p = toW(h.x + Math.cos(f) * 70, h.y + Math.sin(f) * 70);
-      ajarLight.position.set(p.x, 1.2, p.z); ajarLight.intensity = 30;
+    spot.intensity = 0;
+    if (V.ajar && houses[V.ajar.i]) { // lueur derrière le rideau entrouvert
+      const hh = houses[V.ajar.i];
+      ajarLight.position.copy(hh.g.localToWorld(new THREE.Vector3(WIN_X[V.ajar.win] || 0, 2.1, hh.d / 2 + .5)));
+      ajarLight.intensity = 10;
     } else ajarLight.intensity = 0;
 
     // --- caméra
@@ -562,9 +596,19 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
       tgt.lerp(C, .45);
     }
     if (inside && night && V.alive && !V.wolf) { // dans sa maison la nuit : vue plongeante
-      wantPitch = V.peek ? 1.1 : 1.25; wantDist = V.peek ? 26 : 12;
-      if (V.peek) tgt.add(new THREE.Vector3(Math.cos(V.peek.angle) * 10, 0, Math.sin(V.peek.angle) * 10));
+      wantPitch = 1.25; wantDist = 12;
     }
+    if (V.peek && inside) {
+      // Petite Fille : vue à la première personne, l'œil collé au rideau
+      const eye = inside.g.localToWorld(new THREE.Vector3(WIN_X[V.peek.win] || 0, 2.05, inside.d / 2 - inside.t - .45));
+      camera.position.copy(eye);
+      camera.fov = 52; camera.updateProjectionMatrix();
+      camera.lookAt(eye.x + Math.cos(V.peek.angle) * 10, eye.y + Math.tan(V.peek.pitch || 0) * 10, eye.z + Math.sin(V.peek.angle) * 10);
+      sun.position.set(meW.x + 25, 45, meW.z + 15); sun.target.position.copy(meW);
+      renderer.render(scene, camera);
+      return;
+    }
+    if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
     cam.curPitch += (wantPitch - cam.curPitch) * Math.min(1, dt * 4);
     cam.curDist += (wantDist - cam.curDist) * Math.min(1, dt * 4);
     cam.target.lerp(tgt, Math.min(1, dt * 8));
@@ -587,5 +631,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   }
   // au conseil : caméra derrière le joueur, tournée vers le feu
   function faceCenterFrom(x, y) { cam.yaw = Math.atan2(x - cfg.center.x, y - cfg.center.y); }
-  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, get yaw() { return cam.yaw; }, houses: cfg.houses };
+  // demi-angle horizontal du champ de la caméra (pour l'ouverture du rideau à l'écran)
+  function hHalfFov() { return Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect); }
+  return { frame, mouseGround, collide, faceHouseFrom, faceCenterFrom, hHalfFov, get yaw() { return cam.yaw; }, set yaw(v) { cam.yaw = v; }, houses: cfg.houses };
 }

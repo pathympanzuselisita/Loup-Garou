@@ -117,3 +117,12 @@ button.small { padding: 4px 8px; font-size: 12px; background: #2c3242; }
 .xpbar > div { height: 100%; width: 0; background: linear-gradient(90deg, #c79a2b, #f0c36b); transition: width .5s; }
 .acc-stats { font-size: 12px; color: #9aa4b5; }
 #plist .lv { font-size: 11px; background: #2c3a5c; border-radius: 999px; padding: 0 6px; color: #f0c36b; font-weight: 700; flex: none; }
+
+/* vue de la Petite Fille : deux pans de rideau ne laissent qu'une fente */
+#curtainView { position: fixed; inset: 0; pointer-events: none; }
+#curtainView .cl, #curtainView .cr { position: absolute; top: 0; bottom: 0; width: 30%;
+  background: repeating-linear-gradient(90deg, #3a0f12 0 18px, #5a1a1e 18px 34px, #2b0b0d 34px 44px);
+  box-shadow: 0 0 60px 30px #000c; }
+#curtainView .cl { left: 0; border-right: 3px solid #1a0507; border-radius: 0 0 40% 0 / 0 0 8% 0; }
+#curtainView .cr { right: 0; border-left: 3px solid #1a0507; border-radius: 0 0 0 40% / 0 0 0 8%; }
+#curtainView::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, #000a 100%); }

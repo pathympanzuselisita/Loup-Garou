@@ -56,10 +56,12 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
 - **Nuit** : chaque joueur rentre dans sa maison. Les villageois y dorment : ils ne voient rien
   et ne peuvent pas parler. Les loups sortent discrètement de chez eux, rôdent dans le village et
   se parlent entre eux, avec une **voix déformée** pour qu'on ne les reconnaisse pas.
-- **Petite Fille** : la nuit, touche **E** pour entrouvrir sa porte. Elle voit un cône étroit dans la
-  direction de la souris et entend les loups proches. De loin, un loup n'est qu'une silhouette :
-  elle ne le reconnaît que s'il passe tout près. Mais un loup qui s'approche voit la lumière
-  de la porte, et s'il reste trop près trop longtemps, la meute découvre qui elle est.
+- **Petite Fille** : la nuit, **Q** ou **D** entrouvre le rideau de sa fenêtre gauche ou droite
+  (**E** pour refermer). Elle regarde alors dehors **à la première personne**, par une fente
+  étroite, en bougeant la souris, et entend les loups proches. De loin, un loup n'est qu'une
+  silhouette : elle ne le reconnaît que s'il passe tout près. Mais les loups voient le rideau
+  s'entrouvrir, et s'ils restent trop près trop longtemps, la meute découvre qui elle est.
+- Chaque maison a deux fenêtres à rideaux et une **boîte aux lettres** avec le nom de l'habitant.
   Chaque rôle a un chrono : action non faite = action perdue.
 - **Jour** : tout le monde se déplace et débat. Si plus de la moitié clique « Passer au vote »,
   le vote commence plus tôt.

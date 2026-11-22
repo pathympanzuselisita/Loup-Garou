@@ -43,7 +43,7 @@ const DETECT_TIME = 2;                   // secondes cumulées pour être repér
 
 const ROLE_INFO = {
   loup:       { name: 'Loup-Garou', team: 'loups', icon: '🐺',
-                desc: "Chaque nuit, sortez discrètement de votre maison, rejoignez la meute (la tanière est un bon point de rendez-vous) et choisissez une victime avant la fin du chrono. La nuit, votre voix est déformée pour qu'on ne vous reconnaisse pas. Méfiez-vous de la Petite Fille : une porte entrouverte trahit sa présence !" },
+                desc: "Chaque nuit, sortez discrètement de votre maison, rejoignez la meute (la tanière est un bon point de rendez-vous) et choisissez une victime avant la fin du chrono. La nuit, votre voix est déformée pour qu'on ne vous reconnaisse pas. Méfiez-vous de la Petite Fille : un rideau qui s'entrouvre trahit sa présence !" },
   villageois: { name: 'Villageois', team: 'village', icon: '🧑‍🌾',
                 desc: "Vous n'avez aucun pouvoir, mais votre voix compte : discutez, démasquez les loups et votez pour les éliminer." },
   voyante:    { name: 'Voyante', team: 'village', icon: '🔮',
@@ -55,7 +55,7 @@ const ROLE_INFO = {
   cupidon:    { name: 'Cupidon', team: 'village', icon: '💘',
                 desc: "La première nuit, désignez deux amoureux. Si l'un meurt, l'autre meurt de chagrin. Si ce sont les deux derniers survivants, ils gagnent ensemble." },
   petitefille:{ name: 'Petite Fille', team: 'village', icon: '👧',
-                desc: "La nuit, entrouvrez votre porte (touche E) pour espionner : vous voyez un cône étroit dans la direction de votre souris et entendez les loups proches (voix déformées). Vous ne reconnaissez un loup que s'il passe tout près. Attention : si un loup s'approche trop pendant que la porte est ouverte, il vous repère !" },
+                desc: "La nuit, entrouvrez le rideau d'une de vos deux fenêtres (Q = gauche, D = droite, E = refermer) : vous voyez à la première personne, par une fente étroite, et entendez les loups proches (voix déformées). Bougez la souris pour regarder. Vous ne reconnaissez un loup que s'il passe tout près. Attention : les loups voient les rideaux bouger, et s'ils restent trop près, ils vous repèrent !" },
   spectateur: { name: 'Spectateur', team: '-', icon: '👻',
                 desc: "Vous êtes arrivé en cours de partie : vous regardez en fantôme." },
 };
@@ -116,8 +116,15 @@ const isWolf = p => p && p.role === 'loup';
 const isNight = () => game.phase === 'night' || game.phase === 'witch';
 const isGirl = p => p && p.role === 'petitefille';
 const peeking = p => isGirl(p) && p.alive && isNight() && p.peek && p.peek.open;
+// position (px) des deux fenêtres de façade : [0] gauche, [1] droite (vues de l'intérieur)
+const WIN_LOCAL = [35, -35], FRONT = 46;
+function windowPos(h, win) {
+  const lx = WIN_LOCAL[win] ?? 0, sf = Math.sin(h.face), cf = Math.cos(h.face);
+  return { x: h.x + lx * sf + FRONT * cf, y: h.y - lx * cf + FRONT * sf };
+}
 function inCone(girl, t) {
-  const dx = t.x - girl.x, dy = t.y - girl.y, d = Math.hypot(dx, dy);
+  const o = girl.house ? windowPos(girl.house, girl.peek.win) : girl; // on regarde depuis la fenêtre
+  const dx = t.x - o.x, dy = t.y - o.y, d = Math.hypot(dx, dy);
   if (d > PEEK_RANGE) return false;
   if (d < 40) return true;
   let da = Math.atan2(dy, dx) - girl.peek.angle;
@@ -207,7 +214,7 @@ function viewFor(p) {
   if (isNight() && n && p.alive) {
     if (isWolf(p)) v.wolfVotes = n.wolfVotes;
     if (p.role === 'voyante') v.seerTarget = n.seer;
-    if (isGirl(p)) { v.peek = !!(p.peek && p.peek.open); v.spotted = !!n.spotted; }
+    if (isGirl(p)) { v.peek = !!(p.peek && p.peek.open); v.peekWin = p.peek ? p.peek.win : 0; v.spotted = !!n.spotted; }
     if (p.role === 'cupidon' && game.day === 1) v.cupid = n.cupid;
     if (p.role === 'sorciere' && game.phase === 'witch') v.witch = { victim: n.victim, potions: game.potions, done: n.witchDone };
   }
@@ -537,11 +544,14 @@ function attach(socket, joinData) {
     sys(`🔮 Votre boule de cristal révèle : ${p.name} est ${roleName(p.role)}.`, 'seer', me.id);
     broadcastState(); checkNightEarly();
   }));
-  socket.on('peek', guard(({ open, angle } = {}) => {
-    if (!isNight() || !me.alive || !isGirl(me) || game.night.spotted) return;
-    const was = me.peek && me.peek.open;
-    me.peek = { open: !!open, angle: Number.isFinite(angle) ? angle : 0 };
-    if (was !== me.peek.open) broadcastState();
+  socket.on('peek', guard(({ open, angle, win } = {}) => {
+    if (!isNight() || !me.alive || !isGirl(me) || game.night.spotted || !me.house) return;
+    const was = me.peek && `${me.peek.open}:${me.peek.win}`;
+    // on ne peut regarder que vers l'extérieur, à travers la fenêtre
+    let da = Number.isFinite(angle) ? Math.atan2(Math.sin(angle - me.house.face), Math.cos(angle - me.house.face)) : 0;
+    da = Math.max(-0.7, Math.min(0.7, da));
+    me.peek = { open: !!open, angle: me.house.face + da, win: win === 1 ? 1 : 0 };
+    if (was !== `${me.peek.open}:${me.peek.win}`) broadcastState();
   }));
   socket.on('cupid', guard(ids => {
     if (!nightActor('cupidon') || game.day !== 1 || game.night.cupid || !Array.isArray(ids)) return;
@@ -679,7 +689,7 @@ const hearTimer = setInterval(() => {
       }
     }
     // les loups proches voient la lumière d'une porte entrouverte
-    if (girl && isWolf(p) && p.alive && dist(p, girl) < AJAR_SEEN) msg.ajar = { x: girl.house.x, y: girl.house.y, a: girl.peek.angle };
+    if (girl && isWolf(p) && p.alive && dist(p, girl) < AJAR_SEEN) msg.ajar = { i: girl.house.i, win: girl.peek.win };
     if (p === girl && n) { msg.detect = Math.min(1, n.detect / DETECT_TIME); msg.danger = danger; }
     io.to(p.socketId).emit('hear', msg);
   }

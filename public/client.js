@@ -130,7 +130,7 @@ socket.on('welcome', cfg => {
     // pendant le vote : cliquer sur un joueur = voter contre lui
     if (S && S.phase === 'vote' && S.me.alive && id !== myId && P(id)?.alive) socket.emit('vote', id);
   } });
-  window.dbg = { get S() { return S; }, me, voice, get visible() { return visible; }, emit: (...a) => socket.emit(...a) };
+  window.dbg = { get S() { return S; }, me, voice, get visible() { return visible; }, emit: (...a) => socket.emit(...a), get scene() { return scene3d; } };
 });
 socket.on('teleport', p => {
   me.x = p.x; me.y = p.y;
@@ -194,7 +194,12 @@ window.addEventListener('keydown', e => {
   if (!joined || !$('#login').hidden) return;
   if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
   if (e.key === 'Enter') { chatIn.focus(); e.preventDefault(); return; }
-  if (e.key.toLowerCase() === 'e' && !e.repeat) togglePeek();
+  if (isGirlNight() && !e.repeat) { // Petite Fille : Q/A = rideau gauche, D = rideau droit, E/S = refermer
+    const k = e.key.toLowerCase();
+    if (k === 'q' || k === 'a' || k === 'arrowleft') return openCurtain(0);
+    if (k === 'd' || k === 'arrowright') return openCurtain(1);
+    if (k === 'e' || k === 's' || k === 'arrowdown') return closeCurtain();
+  }
   keys.add(e.key.toLowerCase());
   if (e.key.startsWith('Arrow')) e.preventDefault();
 });
@@ -202,31 +207,48 @@ window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
 
 // ------------------------------------------------------- Petite Fille
-let peekAngle = Math.PI / 2, lastPeekSend = 0, lastPeekKey = '';
+let peekAngle = Math.PI / 2, peekPitch = 0, peekWin = 0, lastPeekSend = 0, lastPeekKey = '';
 const isGirlNight = () => S && S.me.role === 'petitefille' && S.me.alive && isNightPhase();
-function togglePeek() {
+function openCurtain(win) {
   if (!isGirlNight() || S.spotted) return;
-  S.peek = !S.peek;
+  const h = myHouse(); if (h && !S.peek) { peekAngle = h.face; peekPitch = 0; }
+  S.peek = true; peekWin = win; S.peekWin = win;
+  sendPeek(true);
+  lastPanelKey = ''; renderPanel();
+}
+function closeCurtain() {
+  if (!isGirlNight() || !S.peek) return;
+  S.peek = false;
   sendPeek(true);
   lastPanelKey = ''; renderPanel();
 }
 function sendPeek(force) {
-  const k = `${S.peek ? 1 : 0}:${peekAngle.toFixed(2)}`;
+  const k = `${S.peek ? 1 : 0}:${peekWin}:${peekAngle.toFixed(2)}`;
   const now = performance.now();
   if (k === lastPeekKey || (!force && now - lastPeekSend < 80)) return;
   lastPeekKey = k; lastPeekSend = now;
-  socket.emit('peek', { open: !!S.peek, angle: peekAngle });
+  socket.emit('peek', { open: !!S.peek, angle: peekAngle, win: peekWin });
 }
+// à la première personne : la souris tourne la tête (dans les limites de la fenêtre)
 window.addEventListener('mousemove', e => {
-  if (!isGirlNight() || !scene3d) return;
-  const g = scene3d.mouseGround(e.clientX, e.clientY), h = myHouse();
-  if (!g || !h) return;
-  // on regarde par la porte : angle limité devant la façade
-  let a = Math.atan2(g.y - h.y, g.x - h.x), da = Math.atan2(Math.sin(a - h.face), Math.cos(a - h.face));
-  da = Math.max(-1.2, Math.min(1.2, da));
-  peekAngle = h.face + da;
-  if (S.peek) sendPeek(false);
+  if (!isGirlNight() || !S.peek) return;
+  const h = myHouse(); if (!h) return;
+  const fx = Math.max(-1, Math.min(1, (e.clientX / innerWidth - .5) * 2));
+  peekAngle = h.face + fx * 0.7;
+  peekPitch = Math.max(-.35, Math.min(.25, (.5 - e.clientY / innerHeight) * .7));
+  sendPeek(false);
 });
+// cache « rideaux » : seule une fente étroite reste visible
+function updateCurtainView() {
+  const on = !!(scene3d && isGirlNight() && S.peek);
+  const cv2 = $('#curtainView');
+  cv2.hidden = !on;
+  if (!on) return;
+  const frac = Math.min(1, Math.tan(CFG.peek.half) / Math.tan(scene3d.hHalfFov()));
+  const side = (1 - frac) / 2 * 100;
+  cv2.querySelector('.cl').style.width = side + '%';
+  cv2.querySelector('.cr').style.width = side + '%';
+}
 
 // -------------------------------------------------------------- helpers
 const P = id => S && S.players.find(p => p.id === id);
@@ -313,7 +335,7 @@ function renderPanel() {
     if (!S.me.alive) h += `<h4>👻 Vous êtes un fantôme</h4><p>Vous voyez tout. Les loups votent :</p>${wolfVotesHtml()}`;
     else if (role === 'loup') {
       const mine = S.wolfVotes && S.wolfVotes[myId];
-      h += `<h4>🐺 Choisissez votre victime</h4><p>Sortez discrètement de chez vous et retrouvez la meute (tanière en haut à gauche). Votre voix est déformée cette nuit. Gare aux portes entrouvertes : la Petite Fille espionne peut-être !</p>
+      h += `<h4>🐺 Choisissez votre victime</h4><p>Sortez discrètement de chez vous et retrouvez la meute (tanière en haut à gauche). Votre voix est déformée cette nuit. Gare aux rideaux qui s'entrouvrent : la Petite Fille espionne peut-être !</p>
         ${mine ? '' : '<p class="warn">⚠ Vous n\'avez pas encore voté !</p>'}
         ${targetBtns(living.filter(p => p.role !== 'loup'), 'wolf-vote', { sel: p => mine === p.id, extra: p => wolfCount(p.id) })}`;
     } else if (role === 'voyante') {
@@ -374,10 +396,12 @@ function renderPanel() {
   $('#panelBody').innerHTML = h;
 }
 function girlPanel() {
-  if (S.spotted) return `<h4>👧 Repérée !</h4><p class="warn">Les loups vous ont vue. Votre porte reste fermée jusqu'au matin.</p>`;
+  if (S.spotted) return `<h4>👧 Repérée !</h4><p class="warn">Les loups vous ont vue. Vos rideaux restent fermés jusqu'au matin.</p>`;
   return `<h4>👧 Espionner les loups</h4>
-    <p>Entrouvrez la porte puis visez avec la souris : vous voyez un cône étroit. Les loups lointains sont des silhouettes ; vous ne les reconnaissez que s'ils passent tout près… mais alors ils risquent de vous repérer !</p>
-    <button data-act="peek" class="${S.peek ? 'sel' : ''}" style="width:100%">${S.peek ? '🚪 Refermer la porte (E)' : '🚪 Entrouvrir la porte (E)'}</button>
+    <p>Entrouvrez le rideau d'une fenêtre : vous regardez dehors à la première personne, par une fente étroite (bougez la souris pour regarder). Les loups lointains sont des silhouettes ; vous ne les reconnaissez que s'ils passent tout près… mais ils voient le rideau bouger !</p>
+    <div class="row"><button data-act="peek0" class="${S.peek && peekWin === 0 ? 'sel' : ''}" style="flex:1">🪟 Rideau gauche (Q)</button>
+    <button data-act="peek1" class="${S.peek && peekWin === 1 ? 'sel' : ''}" style="flex:1">Rideau droit (D) 🪟</button></div>
+    <button data-act="peekclose" ${S.peek ? '' : 'disabled'} style="width:100%">Refermer le rideau (E)</button>
     <div id="detectWrap" style="margin-top:8px">Risque d'être repérée : <div style="height:8px;background:#2a3040;border-radius:4px;overflow:hidden"><div id="detectBar" style="height:100%;width:0;background:#e5533c"></div></div></div>`;
 }
 function wolfCount(id) {
@@ -397,7 +421,9 @@ $('#panelBody').addEventListener('click', e => {
   if (!b || b.disabled) return;
   const id = b.dataset.id, act = b.dataset.act;
   switch (act) {
-    case 'peek': togglePeek(); break;
+    case 'peek0': openCurtain(0); break;
+    case 'peek1': openCurtain(1); break;
+    case 'peekclose': closeCurtain(); break;
     case 'start': case 'skip': case 'restart': case 'ready-vote': socket.emit(act); break;
     case 'wolf-vote': case 'seer': case 'guard': case 'vote': case 'hunter-shoot': socket.emit(act, id); break;
     case 'cupid-pick':
@@ -467,7 +493,7 @@ function frame(t) {
   // message central
   let msg = '';
   if (isNightPhase() && S.me.alive && !amWolf()) {
-    msg = isGirlNight() ? (S.spotted ? '😱 Repérée ! Porte fermée.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Appuyez sur E pour entrouvrir la porte')
+    msg = isGirlNight() ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
       : needsAction() ? '🌙 Agissez avant la fin de la nuit ! →' : '💤 Vous dormez dans votre maison…';
   }
   const cm = $('#centerMsg');
@@ -489,11 +515,12 @@ function frame(t) {
     const o = others.get(id), b = bubbles.get(id);
     entities.push({ id, anon: true, name: '?', color: '#202026', alive: true, role: 'loup', x: o.x, y: o.y, bubble: b && b.until > now ? b.text : null });
   }
+  updateCurtainView();
   const owners = {};
   for (const p of S.players) if (p.house) owners[p.house.i] = p;
   scene3d.frame(dt, {
     phase: S.phase, night: isNightPhase(), myVote: S.phase === 'vote' ? (S.votes || {})[myId] : null, alive: S.me.alive, wolf: amWolf(), me, entities, owners,
-    peek: isGirlNight() && S.peek ? { angle: peekAngle, half: CFG.peek.half, range: CFG.peek.range } : null,
+    peek: isGirlNight() && S.peek ? { angle: peekAngle, pitch: peekPitch, win: peekWin, half: CFG.peek.half, range: CFG.peek.range } : null,
     ajar: voice.ajar && isNightPhase() ? voice.ajar : null,
     showRing: S.phase !== 'lobby' && S.phase !== 'end' && (!isNightPhase() || amWolf() || !S.me.alive),
   });
