@@ -11,8 +11,15 @@
   <div class="card">
     <h1>🐺 Les Loups de Brumeval</h1>
     <p class="sub">Loups-garous multijoueur · chat de proximité · nuits chronométrées</p>
+    <p id="inviteHint" class="invite" hidden></p>
     <input id="nameIn" maxlength="18" placeholder="Votre pseudo" autocomplete="off">
-    <button id="joinBtn">Entrer dans le village</button>
+    <button id="createBtn" class="primary">🏡 Créer une partie</button>
+    <div class="or"><span>ou rejoindre avec un code</span></div>
+    <div class="joinrow">
+      <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+      <button id="joinBtn">Rejoindre</button>
+    </div>
+    <p id="loginErr" class="err" hidden></p>
     <p id="secureHint" class="hint" hidden>⚠️ Le micro ne fonctionne qu'en <b>https</b> (ou sur localhost). Utilisez l'adresse https affichée par le serveur.</p>
     <div class="howto">
       <b>Comment jouer</b>
@@ -33,6 +40,8 @@
     <span id="phaseLbl"></span>
     <span id="timerLbl"></span>
     <span class="grow"></span>
+    <button id="roomBtn" title="Copier le lien d'invitation">🔑 Salon</button>
+    <button id="leaveBtn" title="Quitter le salon">🚪</button>
     <button id="voiceBtn" title="Rejoindre le chat vocal de proximité">🎙️ Activer le vocal</button>
     <button id="muteBtn" hidden>🔊 Micro ouvert</button>
   </div>

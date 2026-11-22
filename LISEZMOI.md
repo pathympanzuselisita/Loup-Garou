@@ -12,6 +12,14 @@ avant la fin du temps.
    - Ou à la main : `npm install` puis `npm start`
 3. Ouvre **http://localhost:3000** dans ton navigateur (Chrome, Edge ou Firefox).
 
+## Salons
+
+Sur l'écran d'accueil : **« Créer une partie »** ouvre un nouveau salon avec un **code de 4 lettres**
+(ex. `XACX`). Partage ce code, ou le lien du bouton **« 🔑 Salon · Copier le lien »**
+(`…?salon=XACX`), à tes amis : ils entrent le code et cliquent sur **« Rejoindre »**.
+Chaque salon a son propre village et sa propre partie (16 joueurs max par partie).
+Un salon vide est fermé automatiquement au bout de 10 minutes.
+
 ## Faire jouer tes amis
 
 - **Même Wi-Fi / même réseau** : le serveur affiche une adresse du type `https://192.168.x.x:3443`.

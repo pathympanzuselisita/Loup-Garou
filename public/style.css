@@ -93,3 +93,13 @@ kbd { background: #222a38; border: 1px solid #3a4150; border-radius: 4px; paddin
 #camHint { position: fixed; right: 12px; bottom: 12px; font-size: 12px; color: #cfd6e2; background: #0008;
   padding: 4px 10px; border-radius: 8px; pointer-events: none; }
 @media (max-width: 760px) { #camHint { display: none; } }
+
+.invite { margin: 0; padding: 8px 12px; border-radius: 10px; background: #2a3550; color: #e6ecff; font-size: 13px; }
+.err { margin: 0; color: #ff8a7a; font-size: 13px; }
+.or { display: flex; align-items: center; gap: 10px; color: #8a94a6; font-size: 12px; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: #2b3446; }
+.joinrow { display: flex; gap: 8px; }
+.joinrow input { flex: 1; text-transform: uppercase; letter-spacing: 6px; font-weight: 700; text-align: center; font-size: 18px; min-width: 0; }
+#panelBody .roomcode { background: #0f141d; border-radius: 8px; padding: 8px 10px; }
+#panelBody .roomcode b { font-size: 20px; letter-spacing: 4px; color: #f0c36b; }
+#roomBtn { background: #2c3a5c; }

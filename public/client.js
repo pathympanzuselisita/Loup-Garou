@@ -21,18 +21,56 @@ let joined = false;
 // ------------------------------------------------------------ connexion
 if (!window.isSecureContext) $('#secureHint').hidden = false;
 try { $('#nameIn').value = localStorage.getItem('lg-name') || ''; } catch (e) { /* ignore */ }
-$('#nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
-$('#joinBtn').onclick = join;
-function join() {
-  const name = $('#nameIn').value.trim();
-  if (!name) return $('#nameIn').focus();
-  try { localStorage.setItem('lg-name', name); } catch (e) { /* ignore */ }
-  joined = true;
-  socket.emit('join', { id: myId, name });
+// ---- salons : code dans l'URL (?salon=ABCD) pour inviter ses amis
+let roomCode = (new URLSearchParams(location.search).get('salon') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+if (roomCode) {
+  $('#codeIn').value = roomCode;
+  $('#inviteHint').hidden = false;
+  $('#inviteHint').textContent = `🎟️ Vous êtes invité dans le salon ${roomCode} : entrez votre pseudo puis cliquez sur « Rejoindre ».`;
 }
-socket.on('connect', () => { if (joined) socket.emit('join', { id: myId, name: $('#nameIn').value.trim() }); });
+function loginError(msg) { const el = $('#loginErr'); el.textContent = msg; el.hidden = !msg; }
+function getName() {
+  const name = $('#nameIn').value.trim();
+  if (!name) { loginError('Choisissez d\'abord un pseudo.'); $('#nameIn').focus(); return null; }
+  try { localStorage.setItem('lg-name', name); } catch (e) { /* ignore */ }
+  return name;
+}
+function join(code) {
+  const name = getName();
+  if (!name) return;
+  code = String(code || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (code.length !== 4) { loginError('Le code d\'un salon fait 4 lettres.'); return $('#codeIn').focus(); }
+  loginError('');
+  roomCode = code;
+  joined = true;
+  socket.emit('join', { id: myId, name, room: code });
+}
+$('#nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') (roomCode ? join(roomCode) : $('#createBtn').click()); });
+$('#codeIn').addEventListener('keydown', e => { if (e.key === 'Enter') join($('#codeIn').value); });
+$('#codeIn').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); });
+$('#joinBtn').onclick = () => join($('#codeIn').value);
+$('#createBtn').onclick = () => {
+  if (!getName()) return;
+  socket.emit('create-room', res => {
+    if (!res || res.error) return loginError(res ? res.error : 'Erreur du serveur.');
+    join(res.code);
+  });
+};
+socket.on('join-error', msg => { joined = false; loginError(msg); });
+socket.on('connect', () => { if (joined) socket.emit('join', { id: myId, name: $('#nameIn').value.trim(), room: roomCode }); });
+function inviteLink() { return `${location.origin}${location.pathname}?salon=${roomCode}`; }
+$('#roomBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText(inviteLink()); $('#roomBtn').textContent = '✅ Lien copié !'; }
+  catch (e) { prompt('Lien d\'invitation :', inviteLink()); }
+  setTimeout(() => { $('#roomBtn').textContent = `🔑 Salon ${roomCode} · 📋 Copier le lien`; }, 2000);
+};
+$('#leaveBtn').onclick = () => { if (confirm('Quitter ce salon ?')) location.href = location.pathname; };
 socket.on('welcome', cfg => {
   CFG = cfg;
+  roomCode = cfg.room;
+  history.replaceState(null, '', `?salon=${roomCode}`);
+  $('#roomBtn').textContent = `🔑 Salon ${roomCode} · 📋 Copier le lien`;
+  document.title = `Salon ${roomCode} — Les Loups de Brumeval`;
   $('#login').hidden = true;
   $('#game').hidden = false;
   if (!scene3d) scene3d = createScene(cv, cfg, { onPick: id => {
@@ -198,7 +236,8 @@ function renderPanel() {
     const st = S.settings;
     const n = S.players.length;
     const autoW = Math.max(1, Math.floor(n / 4));
-    h += `<h4>Salle d'attente (${n} joueur${n > 1 ? 's' : ''})</h4>`;
+    h += `<h4>Salle d'attente (${n} joueur${n > 1 ? 's' : ''})</h4>
+      <p class="roomcode">Code du salon : <b>${esc(roomCode)}</b><br><small>Partagez ce code ou le lien (bouton en haut) à vos amis.</small></p>`;
     if (isHost) {
       h += `<p>Vous êtes l'hôte 👑. Réglez la partie puis lancez-la (3 joueurs minimum).</p>
       <div class="row"><label>Loups-garous</label><select data-set="wolves">

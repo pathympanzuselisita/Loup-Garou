@@ -69,6 +69,20 @@ const io = new Server({ maxHttpBufferSize: 2e5 });
 const httpServer = http.createServer(app);
 io.attach(httpServer);
 
+// =====================================================================
+//  SALONS : chaque salon (code à 4 lettres) a son propre village et sa partie.
+//  Tout le code ci-dessous jusqu'à « fin du salon » est propre à un salon.
+// =====================================================================
+const rooms = new Map();
+const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // sans I ni O (confusion avec 1 et 0)
+function newCode() {
+  let c;
+  do { c = Array.from({ length: 4 }, () => CODE_LETTERS[Math.floor(Math.random() * CODE_LETTERS.length)]).join(''); } while (rooms.has(c));
+  return c;
+}
+
+function createRoom(code) {
+let lastActive = Date.now();
 // ----------------------------------------------------------------- état
 const game = {
   phase: 'lobby', // lobby | night | witch | hunter | day | vote | end
@@ -156,12 +170,12 @@ function clearTimer() { clearTimeout(game.timer); game.timer = null; game.timerF
 function sys(text, kind = 'info', to = null) {
   const msg = { text, kind };
   if (to) { const p = get(to); if (p && p.connected) io.to(p.socketId).emit('sys', msg); }
-  else io.emit('sys', msg);
+  else io.to(code).emit('sys', msg);
 }
 function announce(title, text, to = null) {
   const msg = { title, text };
   if (to) { const p = get(to); if (p && p.connected) io.to(p.socketId).emit('announce', msg); }
-  else io.emit('announce', msg);
+  else io.to(code).emit('announce', msg);
 }
 function teleport(p, x, y, look = null) {
   p.x = x; p.y = y;
@@ -417,10 +431,12 @@ function backToLobby() {
 }
 
 // ------------------------------------------------------------ sockets
-io.on('connection', socket => {
+function attach(socket, joinData) {
   let me = null;
+  socket.join(code);
+  lastActive = Date.now();
 
-  socket.on('join', ({ id, name } = {}) => {
+  const onJoin = ({ id, name } = {}) => {
     id = String(id || '').slice(0, 40);
     name = String(name || '').trim().slice(0, 18) || 'Anonyme';
     if (!id) return;
@@ -441,11 +457,11 @@ io.on('connection', socket => {
     me.connected = true;
     me.voice = false;
     if (!game.hostId || !get(game.hostId)?.connected) game.hostId = id;
-    socket.emit('welcome', { id, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
+    socket.emit('welcome', { id, room: code, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
       ring: HOUSE_RING, houses: HOUSES, hearRadius: HEAR_RADIUS, councilRadius: COUNCIL_RADIUS, peek: { range: PEEK_RANGE, half: PEEK_HALF_ANGLE } });
     socket.emit('teleport', { x: me.x, y: me.y });
     broadcastState();
-  });
+  };
 
   const guard = fn => (...args) => { if (me && game.players.get(me.id) === me) { try { fn(...args); } catch (e) { console.error(e); } } };
   const isHost = () => me && game.hostId === me.id;
@@ -580,12 +596,15 @@ io.on('connection', socket => {
     if (!me || me.socketId !== socket.id) return;
     me.connected = false;
     me.voice = false;
-    io.emit('voice-gone', me.id);
+    io.to(code).emit('voice-gone', me.id);
     if (game.phase === 'lobby') { game.players.delete(me.id); sys(`${me.name} a quitté le village.`); }
     if (game.hostId === me.id) game.hostId = all().find(p => p.connected)?.id || null;
+    lastActive = Date.now();
     broadcastState();
   });
-});
+
+  onJoin(joinData);
+}
 
 // position des joueurs visibles, 15 fois par seconde
 function anonId(p) {
@@ -594,7 +613,7 @@ function anonId(p) {
   if (!n.anon.has(p.id)) n.anon.set(p.id, 'anon_' + Math.random().toString(36).slice(2, 8));
   return n.anon.get(p.id);
 }
-setInterval(() => {
+const posTimer = setInterval(() => {
   const ps = all();
   for (const p of ps) {
     if (!p.connected) continue;
@@ -612,7 +631,7 @@ setInterval(() => {
 
 // routage de la voix (calculé par le serveur, qui connaît tous les rôles)
 // + détection de la Petite Fille, 5 fois par seconde
-setInterval(() => {
+const hearTimer = setInterval(() => {
   const ps = all();
   const n = game.night;
   const girl = ps.find(peeking);
@@ -650,6 +669,41 @@ setInterval(() => {
     io.to(p.socketId).emit('hear', msg);
   }
 }, 200);
+
+function connectedCount() { return all().filter(p => p.connected).length; }
+function destroy() { clearInterval(posTimer); clearInterval(hearTimer); clearTimer(); }
+return { code, attach, destroy, connectedCount, get lastActive() { return lastActive; }, get game() { return game; } };
+} // ------------------------------------------------------- fin du salon
+
+// connexion : créer un salon ou en rejoindre un avec son code
+io.on('connection', socket => {
+  socket.on('create-room', ack => {
+    if (rooms.size >= 500) return typeof ack === 'function' && ack({ error: 'Trop de salons ouverts, réessayez plus tard.' });
+    const code = newCode();
+    rooms.set(code, createRoom(code));
+    console.log(`Salon ${code} créé (${rooms.size} salon(s))`);
+    if (typeof ack === 'function') ack({ code });
+  });
+  socket.on('join', (data = {}) => {
+    if (socket.data.room) return;
+    const code = String(data.room || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+    const room = rooms.get(code);
+    if (!room) return socket.emit('join-error', `Le salon « ${code || '?'} » n'existe pas (ou a fermé). Vérifiez le code ou créez une nouvelle partie.`);
+    if (room.connectedCount() >= 30) return socket.emit('join-error', 'Ce salon est plein.');
+    socket.data.room = code;
+    room.attach(socket, data);
+  });
+});
+
+// fermeture des salons vides depuis 10 minutes
+setInterval(() => {
+  for (const [code, room] of rooms) {
+    if (room.connectedCount() === 0 && Date.now() - room.lastActive > 10 * 60 * 1000) {
+      room.destroy(); rooms.delete(code);
+      console.log(`Salon ${code} fermé (inactif)`);
+    }
+  }
+}, 60 * 1000);
 
 // ----------------------------------------------------------- démarrage
 function lanIPs() {
