@@ -88,6 +88,9 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
   fait aussitôt ; si personne ne griffe, personne ne meurt. Les loups ne voient pas la Voyante.
 - **Jour** : tout le monde se déplace et débat. Si plus de la moitié clique « Passer au vote »,
   le vote commence plus tôt.
+- **Partie de test avec des amis** : dans le mode développeur, choisir « Attendre mes amis » ;
+  le salon s'ouvre avec les bots, vos amis le rejoignent avec le code, vous pouvez ajouter ou
+  retirer des bots, puis vous lancez la partie.
 - **Vote — le conseil du village** : tous les vivants sont réunis en cercle autour du feu, au centre
   de la place, et **ne peuvent pas quitter le cercle** jusqu'à la fin du vote. Tout le cercle
   s'entend. On vote en **cliquant sur un joueur** (ou dans la liste) ; le nombre de voix s'affiche
@@ -102,7 +105,7 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
 | 🔮 Voyante | La nuit, sort de chez elle et ouvre la boîte aux lettres d'une maison (E) pour lire le rôle de l'habitant, puis rentre dormir. Les rôles découverts restent affichés pour elle |
 | 🧪 Sorcière | Pendant son tour, sort chercher la maison griffée par les loups (E) : potion de vie pour sauver la victime, ou potion de mort chez quelqu'un d'autre (qui meurt en plus), ou rien. Une action par nuit |
 | 🏹 Chasseur | En mourant, abat un joueur |
-| 💘 Cupidon | Lie deux amoureux la 1ʳᵉ nuit. Les amoureux ont un **téléphone** (touche T) pour se parler la nuit… mais ceux qui passent près de leur maison les entendent |
+| 💘 Cupidon | Lie deux amoureux la 1ʳᵉ nuit. Les amoureux ont un **téléphone** (touche T) pour se parler la nuit, au micro : rien n'apparaît dans le chat, mais ceux qui passent près de leur maison entendent leurs voix, et au matin le village apprend que « les amoureux se sont appelés » |
 | 👧 Petite Fille | Entrouvre sa porte (E) la nuit pour espionner les loups dans un cône étroit — risque d'être repérée |
 
 **Victoire** : le village gagne quand tous les loups sont morts ; les loups quand il ne reste

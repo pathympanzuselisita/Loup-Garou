@@ -108,6 +108,7 @@ socket.on('connect', () => {
       return showAuth();
     }
     signedIn(res.user);
+    devResume();
     if (joined) socket.emit('join', { room: roomCode });
   });
 });
@@ -155,12 +156,29 @@ socket.on('state', st => {
   renderAll();
 });
 socket.on('chat', m => {
-  addLog(`<b style="color:${esc(m.color)}">${m.ghost ? '👻 ' : ''}${m.wolf ? '🐺 ' : ''}${esc(m.name)}</b> : ${esc(m.text)}`, m.ghost ? 'ghost' : m.wolf ? 'wolf' : '');
+  // conversation téléphonique : bien visible ; surprise depuis la rue si on n'est pas dans l'appel
+  const overheard = m.phone && S && m.from !== myId && m.from !== S.me.lover;
+  addLog(`${overheard ? '👂 <i>On entend parler dans une maison…</i> ' : ''}<b style="color:${esc(m.color)}">${m.ghost ? '👻 ' : ''}${m.wolf ? '🐺 ' : ''}${esc(m.name)}</b> : ${esc(m.text)}`,
+    m.phone ? 'phone' : m.ghost ? 'ghost' : m.wolf ? 'wolf' : '');
   bubbles.set(m.from, { text: m.text, until: Date.now() + 4500 + m.text.length * 50 });
 });
 socket.on('emote', m => { if (scene3d) scene3d.playEmote(m.id, m.type); });
 socket.on('mailbox-open', m => { const r = R(m.role); if (scene3d) scene3d.openMailbox(m.i, `${m.name} : ${r ? r.icon + ' ' + r.name : '?'}`); });
-socket.on('sys', m => addLog(esc(m.text), m.kind === 'warn' ? 'sys warnm' : 'sys ' + m.kind));
+socket.on('sys', m => addLog(esc(m.text), m.kind === 'warn' ? 'sys warnm' : m.kind === 'phone' ? 'phone' : 'sys ' + m.kind));
+// sonnerie quand l'amoureux appelle
+let ringUntil = 0;
+socket.on('ring', () => {
+  ringUntil = Date.now() + 3000;
+  try {
+    const ac = voice.actx || new (window.AudioContext || window.webkitAudioContext)();
+    for (let k = 0; k < 4; k++) {
+      const o = ac.createOscillator(), g = ac.createGain(), t0 = ac.currentTime + k * .5;
+      o.frequency.value = k % 2 ? 480 : 440; o.connect(g); g.connect(ac.destination);
+      g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.15, t0 + .02); g.gain.exponentialRampToValueAtTime(.0001, t0 + .35);
+      o.start(t0); o.stop(t0 + .4);
+    }
+  } catch (e) { /* pas de son */ }
+});
 socket.on('announce', m => showModal(m.title, m.text));
 
 function addLog(html, cls = '') {
@@ -198,6 +216,7 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); openDev(); }
 }, true);
 let devOk = false, devCodeMem = '';
+try { devCodeMem = sessionStorage.getItem('lg-dev') || ''; } catch (e) { /* ignore */ }
 function devError(m) { $('#devErr').textContent = m || ''; $('#devErr').hidden = !m; }
 function openDev() {
   if (!account) return loginError('Connectez-vous d\'abord pour ouvrir le mode développeur.');
@@ -219,6 +238,7 @@ $('#devAuthBtn').onclick = () => {
   socket.emit('dev-auth', code, res => {
     if (!res || res.error) return devError(res ? res.error : 'Erreur.');
     devOk = true; devCodeMem = code; $('#devCode').value = '';
+    try { sessionStorage.setItem('lg-dev', code); } catch (e) { /* ignore */ }
     openDev();
   });
 };
@@ -226,14 +246,18 @@ $('#devGo').onclick = () => {
   const roles = {};
   document.querySelectorAll('[data-devrole]').forEach(c => { roles[c.dataset.devrole] = c.checked; });
   socket.emit('dev-create', { bots: +$('#devBots').value, role: $('#devRole').value, wolves: +$('#devWolves').value, roles,
-    turn: +$('#devTurn').value, day: +$('#devDay').value, vote: +$('#devVote').value }, res => {
+    turn: +$('#devTurn').value, day: +$('#devDay').value, vote: +$('#devVote').value, autostart: $('#devStart').value === 'now' }, res => {
     if (!res || res.error) return devError(res ? res.error : 'Erreur.');
     $('#devModal').hidden = true;
     if (joined) { location.href = `${location.pathname}?salon=${res.code}`; return; }
     join(res.code);
   });
 };
-socket.on('connect', () => { if (devCodeMem) setTimeout(() => socket.emit('dev-auth', devCodeMem, () => {}), 300); });
+// accès développeur repris automatiquement (reconnexion, rechargement de l'onglet)
+function devResume() {
+  if (!devCodeMem) return;
+  socket.emit('dev-auth', devCodeMem, res => { devOk = !!(res && res.ok); if (!devOk) { devCodeMem = ''; try { sessionStorage.removeItem('lg-dev'); } catch (e) { /* ignore */ } } lastPanelKey = ''; if (S) renderPanel(); });
+}
 
 // ---- emotes (touches 1 à 5 ou barre en bas)
 const EMOTE_KEYS = { '1': 'up', '2': 'down', '3': 'point', '4': 'middle', '5': 'maybe' };
@@ -425,6 +449,12 @@ function renderPanel() {
     const autoW = Math.max(1, Math.floor(n / 4));
     h += `<h4>Salle d'attente (${n} joueur${n > 1 ? 's' : ''})</h4>
       <p class="roomcode">Code du salon : <b>${esc(roomCode)}</b><br><small>Partagez ce code ou le lien (bouton en haut) à vos amis.</small></p>`;
+    if (S.dev) {
+      const nb = S.players.filter(p => p.name.startsWith('🤖')).length;
+      h += `<div class="devbots"><b>🛠️ Partie de test</b> (pas d'XP)<br>🤖 ${nb} bot${nb > 1 ? 's' : ''}`;
+      if (isHost && devOk) h += `<div class="row"><button data-act="bot-add" style="flex:1">+ Ajouter un bot</button><button data-act="bot-del" style="flex:1" ${nb ? '' : 'disabled'}>− Retirer</button></div>`;
+      h += `</div>`;
+    }
     if (isHost) {
       h += `<p>Vous êtes l'hôte 👑. Réglez la partie puis lancez-la (3 joueurs minimum).</p>
       <div class="row"><label>Loups-garous</label><select data-set="wolves">
@@ -501,7 +531,7 @@ function renderPanel() {
   // téléphone des amoureux, la nuit
   if (canPhone()) {
     const l = P(S.me.lover);
-    h += `<div class="phone"><b>📞 Téléphone</b><p>${S.call ? `En ligne avec <b>${esc(l.name)}</b> : parlez dans le chat ou au micro. ⚠ Ceux qui passent près de votre maison vous entendent !` : `Appelez ${esc(l.name)} pour vous parler cette nuit.`}</p>
+    h += `<div class="phone"><b>📞 Téléphone</b><p>${S.call ? `En ligne avec <b>${esc(l.name)}</b> : parlez au micro (ou écrivez, seul votre amoureux lit). ⚠ Ceux qui passent près de votre maison entendent vos voix !` : `Appelez ${esc(l.name)} pour vous parler cette nuit.`}</p>
       <button data-act="phone" class="${S.call ? 'sel' : ''}" style="width:100%">${S.call ? '📵 Raccrocher (T)' : '📞 Appeler (T)'}</button></div>`;
   }
   if (isHost && ph !== 'lobby' && ph !== 'end') h += `<button class="skip" data-act="skip" style="width:100%">⏭ (Hôte) Terminer cette phase maintenant</button>`;
@@ -554,6 +584,8 @@ $('#panelBody').addEventListener('click', e => {
     case 'w-ok': socket.emit('witch', witchSel); break;
     case 'w-skip': socket.emit('witch-skip'); break;
     case 'phone': socket.emit('phone'); break;
+    case 'bot-add': socket.emit('dev-bot', true); break;
+    case 'bot-del': socket.emit('dev-bot', false); break;
   }
 });
 $('#panelBody').addEventListener('change', e => {
@@ -622,6 +654,12 @@ function frame(t) {
     else msg = isGirlNight() && S.step === 'loups' ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
       : needsAction() ? '🌙 C\'est votre tour : agissez ! →' : `💤 Vous dormez… (tour de ${STEP_NAMES[S.step] || 'la Sorcière'})`;
   }
+  // bandeau d'appel des amoureux
+  const cb = $('#callBanner'), inCall = canPhone() && S.call;
+  const cbText = inCall ? `📞 En ligne avec ${P(S.me.lover).name} · T pour raccrocher` : '';
+  if (cb.textContent !== cbText) cb.textContent = cbText;
+  cb.hidden = !inCall;
+  cb.classList.toggle('ringing', inCall && Date.now() < ringUntil);
   const cm = $('#centerMsg');
   if (cm.textContent !== msg) cm.textContent = msg;
   cm.hidden = !msg;

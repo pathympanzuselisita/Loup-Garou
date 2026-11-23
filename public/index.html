@@ -65,6 +65,7 @@
   <div id="rolecard" hidden></div>
   <div id="curtainView" hidden><div class="cl"></div><div class="cr"></div></div>
   <div id="centerMsg" hidden></div>
+  <div id="callBanner" hidden></div>
   <div id="camHint">🖱️ Glisser : tourner la caméra · Molette : zoom</div>
   <div id="panel">
     <div id="panelBody"></div>
@@ -104,6 +105,10 @@
       <div class="row"><label>Tour de chaque rôle (s)</label><input id="devTurn" type="number" min="5" max="120" value="30"></div>
       <div class="row"><label>Débat (s)</label><input id="devDay" type="number" min="10" max="600" value="60"></div>
       <div class="row"><label>Vote (s)</label><input id="devVote" type="number" min="10" max="300" value="30"></div>
+      <div class="row"><label>Démarrage</label><select id="devStart">
+        <option value="now">Tout de suite (seul avec les bots)</option>
+        <option value="wait">Attendre mes amis (je lance moi-même)</option>
+      </select></div>
       <button id="devGo" class="primary">▶ Lancer la partie de test</button>
     </div>
     <p id="devErr" class="err" hidden></p>

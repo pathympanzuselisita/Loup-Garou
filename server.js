@@ -232,7 +232,7 @@ function knownRole(viewer, q) {
 }
 function viewFor(p) {
   const v = {
-    phase: game.phase, day: game.day, timerEnd: game.timerEnd, houses: game.houses, serverNow: Date.now(),
+    phase: game.phase, day: game.day, timerEnd: game.timerEnd, houses: game.houses, dev: !!game.dev, serverNow: Date.now(),
     hostId: game.hostId, settings: game.settings, winner: game.winner,
     me: { id: p.id, role: p.role, alive: p.alive, lover: p.lover, spectator: p.spectator },
     players: all().map(q => ({
@@ -419,6 +419,7 @@ function resolveNight() {
   // au réveil, tout le monde sort de chez soi
   for (const p of all()) p.peek = { open: false, angle: 0 };
   for (const p of alive()) { const d = doorstep(p.house); teleport(p, d.x, d.y); }
+  if (n.called) sys('📞 Les amoureux se sont appelés cette nuit…', 'phase');
   const text = deaths.length ? deathText(deaths) : 'Miracle : personne n\'est mort cette nuit.';
   announce(`☀️ Jour ${game.day} : le village se réveille`, text);
   sys(`☀️ Le village se réveille. ${deaths.length ? deaths.map(d => d.name + ' est mort(e)').join(', ') : 'Personne n\'est mort.'}`, 'phase');
@@ -561,7 +562,8 @@ function attach(socket, joinData) {
       const o = game.dev.opts;
       addBots(o.bots);
       Object.assign(game.settings, o.settings);
-      setTimeout(() => { if (game.phase === 'lobby') startGame({ id, role: o.role }); }, 1500);
+      if (o.autostart) setTimeout(() => { if (game.phase === 'lobby') startGame({ id, role: o.role }); }, 1500);
+      else sys(`🛠️ Salon de test prêt : donnez le code ${code} à vos amis, ajoutez ou retirez des bots, puis lancez la partie.`, 'phase', id);
     }
   };
 
@@ -582,6 +584,8 @@ function attach(socket, joinData) {
     if (isNight() && me.alive && !(isWolf(me) && step() === 'loups') && !onPhone(me)) return sys(me.lover ? 'Vous dormez… appelez votre amoureux (touche T) pour lui parler.' : 'Vous dormez… impossible de parler la nuit.', 'warn', me.id);
     for (const q of all()) {
       if (!q.connected || !(q.id === me.id || canHear(q, me))) continue;
+      // au téléphone, les messages écrits ne vont qu'à l'amoureux (les passants n'entendent que la voix)
+      if (msg.phone && q.id !== me.id && q.id !== me.lover) continue;
       if (msg.wolf && peeking(q) && dist(q, me) > PEEK_IDENTIFY) io.to(q.socketId).emit('chat', { ...msg, from: anonId(me), name: 'Loup ?', color: '#888888' });
       else io.to(q.socketId).emit('chat', msg);
     }
@@ -596,7 +600,16 @@ function attach(socket, joinData) {
     if (s.timers) for (const k of Object.keys(st.timers)) if (Number.isFinite(+s.timers[k])) st.timers[k] = Math.max(10, Math.min(600, Math.round(+s.timers[k])));
     broadcastState();
   }));
-  socket.on('start', guard(() => { if (isHost() && game.phase === 'lobby') startGame(); }));
+  socket.on('start', guard(() => {
+    if (!isHost() || game.phase !== 'lobby') return;
+    if (game.dev) startGame({ id: game.dev.owner, role: game.dev.opts.role }); // rôle imposé par le développeur
+    else startGame();
+  }));
+  // salon de test : l'hôte développeur ajoute / retire des bots en salle d'attente
+  socket.on('dev-bot', guard(add => {
+    if (!socket.data.dev || !game.dev || game.phase !== 'lobby' || !isHost()) return;
+    if (add) { if (all().length < HOUSE_COUNT) addBots(1); } else removeBot();
+  }));
   socket.on('skip', guard(() => {
     if (!isHost() || !game.timerFn) return;
     const fn = game.timerFn; clearTimer(); fn();
@@ -696,8 +709,9 @@ function attach(socket, joinData) {
     const l = get(me.lover);
     if (!l || !l.alive) return;
     game.night.call = !game.night.call;
-    sys(game.night.call ? `📞 Vous appelez ${l.name}…` : '📞 Vous raccrochez.', 'seer', me.id);
-    sys(game.night.call ? `📞 ${me.name} vous appelle ! Parlez (chat ou micro)… mais attention, on vous entend depuis la rue.` : `📞 ${me.name} a raccroché.`, 'seer', l.id);
+    if (game.night.call) game.night.called = true; // annoncé au village le matin
+    // rien dans le chat : seuls les amoureux voient leur bandeau d'appel (et entendent la sonnerie)
+    if (game.night.call && l.connected) io.to(l.socketId).emit('ring', { from: me.name });
     broadcastState();
   }));
 
@@ -845,15 +859,24 @@ function fakeSocket(user) {
   return { id: 'bot:' + user.id, data: { user, room: code }, handshake: { headers: {}, address: 'bot' },
     join() {}, emit() {}, on(ev, fn) { h[ev] = fn; }, trigger(ev, ...a) { if (h[ev]) h[ev](...a); } };
 }
+let botSeq = 0;
 function addBots(n) {
   n = Math.max(1, Math.min(HOUSE_COUNT - 1, n | 0));
-  for (let k = 0; k < n; k++) {
+  for (let j = 0; j < n; j++) {
+    const k = botSeq++;
     const user = { id: `bot_${code}_${k}`, name: '🤖 ' + BOT_NAMES[k % BOT_NAMES.length], level: 1 + Math.floor(Math.random() * 12), bot: true };
     const sock = fakeSocket(user);
     bots.set(user.id, { sock, user, t: {} });
     attach(sock);
   }
   if (!botTimer) botTimer = setInterval(botTick, 150);
+}
+function removeBot() {
+  const last = [...bots.keys()].pop();
+  if (!last) return;
+  bots.delete(last); game.players.delete(last);
+  sys('Un bot quitte le village.');
+  broadcastState();
 }
 function botTick() {
   const now = Date.now();
@@ -970,7 +993,8 @@ io.on('connection', socket => {
     for (const r of SPECIAL_ROLES) roles[r] = !!(o.roles && o.roles[r]);
     const t = v => Math.max(5, Math.min(600, +v || 30));
     room.setDev(socket.data.user.id, {
-      bots: Math.max(2, Math.min(15, +o.bots || 7)),
+      bots: Math.max(1, Math.min(15, +o.bots || 7)),
+      autostart: o.autostart !== false,
       role: ROLE_INFO[o.role] ? o.role : null,
       settings: { wolves: Math.max(0, Math.min(6, +o.wolves || 0)), roles,
         timers: { night: t(o.turn), witch: t(o.turn), hunter: t(o.turn), day: t(o.day || 60), vote: t(o.vote || 30) } },
