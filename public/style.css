@@ -140,3 +140,6 @@ button.small { padding: 4px 8px; font-size: 12px; background: #2c3242; }
 #devModal input[type=number] { width: 80px; }
 #devRoles label { flex: 0 0 auto; font-size: 13px; background: #0f141d; padding: 3px 8px; border-radius: 8px; }
 #devAuth, #devOpts { display: flex; flex-direction: column; gap: 8px; }
+
+#panelBody .phone { margin-top: 10px; background: #2a1830; border: 1px solid #7a3b8c; border-radius: 10px; padding: 8px 10px; }
+#panelBody .phone p { margin: 4px 0 6px; font-size: 13px; }

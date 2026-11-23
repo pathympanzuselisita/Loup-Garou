@@ -100,9 +100,9 @@ Pour tester seul, ouvre plusieurs onglets **en navigation privée** (chaque ongl
 | 🐺 Loup-Garou | Griffe chaque nuit la maison de sa victime |
 | 🧑‍🌾 Villageois | Aucun, mais vote le jour |
 | 🔮 Voyante | La nuit, sort de chez elle et ouvre la boîte aux lettres d'une maison (E) pour lire le rôle de l'habitant, puis rentre dormir. Les rôles découverts restent affichés pour elle |
-| 🧪 Sorcière | Une potion de vie, une potion de mort |
+| 🧪 Sorcière | Pendant son tour, sort chercher la maison griffée par les loups (E) : potion de vie pour sauver la victime, ou potion de mort chez quelqu'un d'autre (qui meurt en plus), ou rien. Une action par nuit |
 | 🏹 Chasseur | En mourant, abat un joueur |
-| 💘 Cupidon | Lie deux amoureux la 1ʳᵉ nuit |
+| 💘 Cupidon | Lie deux amoureux la 1ʳᵉ nuit. Les amoureux ont un **téléphone** (touche T) pour se parler la nuit… mais ceux qui passent près de leur maison les entendent |
 | 👧 Petite Fille | Entrouvre sa porte (E) la nuit pour espionner les loups dans un cône étroit — risque d'être repérée |
 
 **Victoire** : le village gagne quand tous les loups sont morts ; les loups quand il ne reste

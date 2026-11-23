@@ -26,11 +26,14 @@ const VILLAGE_RADIUS = 620;               // rayon du cercle de maisons
 const HOUSE_COUNT = 16;                  // maisons du village (= joueurs max)
 const HOUSE_RING = { rx: VILLAGE_RADIUS, ry: VILLAGE_RADIUS };
 // maisons disposées en cercle (une par joueur), porte tournée vers la place
+// rayon du village : resserré quand il y a peu de joueurs (au moins ~200 px entre deux maisons)
+const villageRadius = n => Math.round(Math.max(380, Math.min(VILLAGE_RADIUS, n > 1 ? 110 / Math.sin(Math.PI / n) : 380)));
 function layoutHouses(n) {
   n = Math.max(1, Math.min(HOUSE_COUNT, n | 0));
+  const R = villageRadius(n);
   return Array.from({ length: n }, (_, i) => {
     const a = -Math.PI / 2 + i * 2 * Math.PI / n;
-    const x = Math.round(CENTER.x + Math.cos(a) * VILLAGE_RADIUS), y = Math.round(CENTER.y + Math.sin(a) * VILLAGE_RADIUS);
+    const x = Math.round(CENTER.x + Math.cos(a) * R), y = Math.round(CENTER.y + Math.sin(a) * R);
     return { i, x, y, face: Math.atan2(CENTER.y - y, CENTER.x - x) };
   });
 }
@@ -159,7 +162,11 @@ function canHear(listener, speaker) {
   const near = dist(listener, speaker) <= HEAR_RADIUS;
   if (!speaker.alive) return !listener.alive;          // les fantômes ne parlent qu'aux fantômes
   if (!listener.alive) return near;                     // les fantômes entendent les vivants proches
-  if (isNight()) return isWolf(speaker) && step() === 'loups' && near && (isWolf(listener) || peeking(listener)); // la nuit, seuls les loups parlent (et la Petite Fille écoute)
+  if (isNight()) {
+    // téléphone des amoureux : l'autre amoureux entend partout, les passants proches de la maison aussi
+    if (onPhone(speaker) && (listener.id === speaker.lover || (near && awakeOutside(listener)))) return true;
+    return isWolf(speaker) && step() === 'loups' && near && (isWolf(listener) || peeking(listener)); // la nuit, seuls les loups parlent (et la Petite Fille écoute)
+  }
   if (game.phase === 'vote') return true; // au conseil, tout le cercle s'entend
   return near;
 }
@@ -178,9 +185,15 @@ function canSee(viewer, target) {
 }
 // la Voyante peut sortir la nuit pour ouvrir UNE boîte aux lettres
 const seerRoaming = p => step() === 'voyante' && p.alive && p.role === 'voyante' && !game.night.seerDone;
+// la Sorcière sort pendant son tour pour trouver la maison griffée
+const witchRoaming = p => game.phase === 'witch' && p.alive && p.role === 'sorciere' && game.night && !game.night.witchDone;
+// amoureux : téléphone la nuit
+const onPhone = p => isNight() && p.alive && p.lover && game.night && game.night.call && get(p.lover)?.alive;
+// joueurs éveillés dehors la nuit (ils peuvent surprendre une conversation téléphonique)
+const awakeOutside = p => p.alive && ((isWolf(p) && step() === 'loups') || seerRoaming(p) || witchRoaming(p) || peeking(p));
 function canMove(p) {
   if (game.phase === 'lobby' || game.phase === 'end' || !p.alive) return true;
-  if (isNight()) return (isWolf(p) && step() === 'loups') || seerRoaming(p);
+  if (isNight()) return (isWolf(p) && step() === 'loups') || seerRoaming(p) || witchRoaming(p);
   if (game.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
 }
@@ -233,9 +246,15 @@ function viewFor(p) {
   if (isNight() && n && p.alive) {
     if (isWolf(p)) { v.wolfVotes = n.wolfVotes; v.scratched = [...new Set(Object.values(n.wolfVotes))].map(id => get(id)?.house?.i); }
     if (p.role === 'voyante') v.seerTarget = n.seer;
+    if (p.lover) v.call = !!n.call;
     if (isGirl(p)) { v.peek = !!(p.peek && p.peek.open); v.peekWin = p.peek ? p.peek.win : 0; v.spotted = !!n.spotted; }
     if (p.role === 'cupidon' && game.day === 1) v.cupid = n.cupid;
-    if (p.role === 'sorciere' && game.phase === 'witch') v.witch = { victim: n.victim, potions: game.potions, done: n.witchDone };
+    if (p.role === 'sorciere' && game.phase === 'witch') {
+      v.witch = { potions: game.potions, done: n.witchDone };
+      // elle voit les griffures sur la maison de la victime (à elle de la trouver)
+      const vic = n.victim && get(n.victim);
+      v.scratched = vic && vic.house ? [vic.house.i] : [];
+    }
   }
   if (isNight() && n) v.step = n.step;
   if (isNight() && n && !p.alive) { v.wolfVotes = n.wolfVotes; v.wolfVictim = n.victim; } // les fantômes suivent tout
@@ -369,13 +388,7 @@ function endNightMain() {
   for (const p of alive()) if (isWolf(p)) {
     sys(n.victim ? `🐺 La meute a choisi : ${get(n.victim).name}.` : '🐺 La meute n\'a choisi personne cette nuit…', 'wolf', p.id);
   }
-  // Cupidon
-  if (n.cupid && !game.lovers) {
-    const [a, b] = n.cupid.map(get);
-    a.lover = b.id; b.lover = a.id; game.lovers = [a.id, b.id];
-    announce('💘 Vous êtes amoureux !', `Cupidon vous a lié à ${b.name}. Si l'un de vous meurt, l'autre meurt de chagrin.`, a.id);
-    announce('💘 Vous êtes amoureux !', `Cupidon vous a lié à ${a.name}. Si l'un de vous meurt, l'autre meurt de chagrin.`, b.id);
-  }
+
   const witch = alive().find(p => p.role === 'sorciere');
   if (witch && (game.potions.life || game.potions.death)) {
     game.phase = 'witch';
@@ -564,9 +577,9 @@ function attach(socket, joinData) {
   socket.on('chat', guard(text => {
     text = String(text || '').trim().slice(0, 300);
     if (!text) return;
-    const msg = { from: me.id, name: me.name, color: me.color, text, ghost: !me.alive,
+    const msg = { from: me.id, name: (onPhone(me) ? '📞 ' : '') + me.name, color: me.color, text, ghost: !me.alive, phone: !!onPhone(me),
       wolf: isNight() && isWolf(me) && me.alive };
-    if (isNight() && me.alive && !(isWolf(me) && step() === 'loups')) return sys('Vous dormez… impossible de parler la nuit.', 'warn', me.id);
+    if (isNight() && me.alive && !(isWolf(me) && step() === 'loups') && !onPhone(me)) return sys(me.lover ? 'Vous dormez… appelez votre amoureux (touche T) pour lui parler.' : 'Vous dormez… impossible de parler la nuit.', 'warn', me.id);
     for (const q of all()) {
       if (!q.connected || !(q.id === me.id || canHear(q, me))) continue;
       if (msg.wolf && peeking(q) && dist(q, me) > PEEK_IDENTIFY) io.to(q.socketId).emit('chat', { ...msg, from: anonId(me), name: 'Loup ?', color: '#888888' });
@@ -643,19 +656,48 @@ function attach(socket, joinData) {
     if (ps.length !== 2) return;
     game.night.cupid = ps.map(p => p.id);
     sys(`💘 ${ps[0].name} et ${ps[1].name} sont désormais amoureux.`, 'seer', me.id);
+    // les amoureux sont liés tout de suite : ils peuvent s'appeler dès cette nuit
+    const [a, b] = ps;
+    a.lover = b.id; b.lover = a.id; game.lovers = [a.id, b.id];
+    const txt = o => `Cupidon vous a lié à ${o.name}. Si l'un de vous meurt, l'autre meurt de chagrin.\n\n📞 La nuit, appelez-vous avec la touche T… mais on vous entend depuis la rue !`;
+    announce('💘 Vous êtes amoureux !', txt(b), a.id);
+    announce('💘 Vous êtes amoureux !', txt(a), b.id);
     broadcastState(); stepDone(1.5);
   }));
-  socket.on('witch', guard(({ save, kill: k } = {}) => {
-    if (game.phase !== 'witch' || !me.alive || me.role !== 'sorciere' || game.night.witchDone) return;
-    const n = game.night;
-    if (save && game.potions.life && n.victim) { n.witchSave = true; game.potions.life = false; }
-    if (k && game.potions.death) {
-      const p = aliveTarget(k);
-      if (p && p.id !== me.id) { n.witchKill = p.id; game.potions.death = false; }
+  // la Sorcière agit devant une maison : potion de vie sur la maison griffée, potion de mort ailleurs
+  const witchFinish = text => {
+    game.night.witchDone = true;
+    sys(text + ' Vous rentrez dormir…', 'seer', me.id);
+    broadcastState();
+    setTimeout(() => { if (game.phase === 'witch') { if (me.alive) teleport(me, me.house.x, me.house.y); setTimer(1, resolveNight); } }, 2500);
+  };
+  socket.on('witch-house', guard(i => {
+    if (!witchRoaming(me)) return;
+    const n = game.night, h = game.houses[i];
+    const p = h && alive().find(q => q.house === h);
+    if (!p) return;
+    if (dist(me, h) > 120) return sys('Approchez-vous de la maison.', 'warn', me.id);
+    if (p.id === n.victim && game.potions.life) {
+      n.witchSave = true; game.potions.life = false;
+      return witchFinish(`💚 Vous versez la potion de vie : ${p.name} est sauvé(e).`);
     }
-    n.witchDone = true;
-    sys(`🧪 ${n.witchSave ? 'Vous avez utilisé la potion de vie. ' : ''}${n.witchKill ? `Vous avez empoisonné ${get(n.witchKill).name}.` : ''}${!n.witchSave && !n.witchKill ? 'Vous n\'avez rien fait.' : ''}`, 'seer', me.id);
-    setTimer(2, resolveNight);
+    if (p.id !== me.id && p.id !== n.victim && game.potions.death) {
+      n.witchKill = p.id; game.potions.death = false;
+      return witchFinish(`☠️ Vous glissez la potion de mort chez ${p.name}.`);
+    }
+  }));
+  socket.on('witch-skip', guard(() => {
+    if (!witchRoaming(me)) return;
+    witchFinish('Vous ne faites rien cette nuit.');
+  }));
+  // amoureux : décrocher / raccrocher le téléphone
+  socket.on('phone', guard(() => {
+    if (!isNight() || !me.alive || !me.lover) return;
+    const l = get(me.lover);
+    if (!l || !l.alive) return;
+    game.night.call = !game.night.call;
+    sys(game.night.call ? `📞 Vous appelez ${l.name}…` : '📞 Vous raccrochez.', 'seer', me.id);
+    sys(game.night.call ? `📞 ${me.name} vous appelle ! Parlez (chat ou micro)… mais attention, on vous entend depuis la rue.` : `📞 ${me.name} a raccroché.`, 'seer', l.id);
     broadcastState();
   }));
 
@@ -864,8 +906,22 @@ function botTick() {
         }
       }
     }
-    if (game.phase === 'witch' && p.role === 'sorciere' && game.night && !game.night.witchDone) once('witch', 2000, 5000, () =>
-      b.sock.trigger('witch', { save: Math.random() < .5, kill: Math.random() < .25 && others.length ? pick(others).id : null }));
+    if (witchRoaming(p)) {
+      // la Sorcière bot choisit : sauver la victime, empoisonner quelqu'un, ou rien
+      if (b.goalKey !== key) {
+        b.goalKey = key;
+        const vic = get(game.night.victim), r = Math.random();
+        const target = vic && game.potions.life && r < .5 ? vic : (game.potions.death && r < .75 ? pick(others.filter(q => q.id !== game.night.victim)) : null);
+        b.goal = target ? { i: target.house.i, x: target.house.x + Math.cos(target.house.face) * 90, y: target.house.y + Math.sin(target.house.face) * 90 } : null;
+      }
+      if (!b.goal) once('wskip', 2000, 4000, () => b.sock.trigger('witch-skip'));
+      else if (moveTo(b.goal.x, b.goal.y)) b.sock.trigger('witch-house', b.goal.i);
+    }
+    // amoureux bots : un petit coup de fil la nuit
+    if (isNight() && p.lover && get(p.lover)?.alive) {
+      once('call', 3000, 8000, () => { if (!game.night.call) b.sock.trigger('phone'); });
+      if (onPhone(p) && now > (b.nextCall || 0)) { b.nextCall = now + rnd(4000, 8000); b.sock.trigger('chat', pick(['Tu es là ? 💕', 'Je n\'arrive pas à dormir…', 'J\'ai entendu des pas dehors…', 'Fais attention à toi cette nuit.', 'Je pense qu\'il faut voter contre ' + pick(others).name + ' demain.'])); }
+    }
   }
 }
 

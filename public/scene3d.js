@@ -129,22 +129,28 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(W + 80, H + 80), new THREE.MeshStandardMaterial({ map: T.grass, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2; ground.position.set(W / 2, 0, H / 2); ground.receiveShadow = true;
   scene.add(ground);
-  const flat = (geo, mat, y, x = C.x, z = C.z) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; scene.add(m); return m; };
+  const flat = (geo, mat, y, x = C.x, z = C.z, parent = scene) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; parent.add(m); return m; };
   const dirtMat = new THREE.MeshStandardMaterial({ map: T.dirt, roughness: 1 });
-  flat(new THREE.RingGeometry(VR - 6.2, VR - 3.4, 96), dirtMat, 0.02);            // chemin circulaire
   const SQ = 12; // rayon de la place
   flat(new THREE.CircleGeometry(SQ, 64), new THREE.MeshStandardMaterial({ map: T.cobble, roughness: .95 }), 0.04); // place
-  for (let i = 0; i < 8; i++) { // allées vers la place
-    const a = i * Math.PI / 4 + Math.PI / 8, len = VR - SQ - 3;
-    const m = flat(new THREE.PlaneGeometry(2.4, len), dirtMat, 0.03, C.x + Math.cos(a) * (SQ + len / 2 - 1), C.z + Math.sin(a) * (SQ + len / 2 - 1));
-    m.rotation.z = -a + Math.PI / 2;
-  }
-  // chemin vers la tanière
   const D = toW(cfg.den.x, cfg.den.y);
-  {
-    const a = Math.atan2(D.z - C.z, D.x - C.x), from = C.clone().add(new THREE.Vector3(Math.cos(a) * VR, 0, Math.sin(a) * VR));
+  // chemins : suivent la taille du village (resserré quand il y a peu de joueurs)
+  const pathGroup = new THREE.Group(); scene.add(pathGroup);
+  let pathR = 0;
+  function buildPaths(vr) {
+    if (Math.abs(vr - pathR) < .01) return;
+    pathR = vr;
+    pathGroup.children.forEach(m => m.geometry.dispose()); pathGroup.clear();
+    flat(new THREE.RingGeometry(vr - 6.2, vr - 3.4, 96), dirtMat, 0.02, C.x, C.z, pathGroup);   // chemin circulaire
+    for (let i = 0; i < 8; i++) { // allées vers la place
+      const a = i * Math.PI / 4 + Math.PI / 8, len = vr - SQ - 3;
+      const m = flat(new THREE.PlaneGeometry(2.4, len), dirtMat, 0.03, C.x + Math.cos(a) * (SQ + len / 2 - 1), C.z + Math.sin(a) * (SQ + len / 2 - 1), pathGroup);
+      m.rotation.z = -a + Math.PI / 2;
+    }
+    // chemin vers la tanière
+    const a = Math.atan2(D.z - C.z, D.x - C.x), from = C.clone().add(new THREE.Vector3(Math.cos(a) * (vr - 4.8), 0, Math.sin(a) * (vr - 4.8)));
     const len = from.distanceTo(D) - 6;
-    const m = flat(new THREE.PlaneGeometry(2, len), dirtMat, 0.025, (from.x + D.x) / 2, (from.z + D.z) / 2);
+    const m = flat(new THREE.PlaneGeometry(2, len), dirtMat, 0.025, (from.x + D.x) / 2, (from.z + D.z) / 2, pathGroup);
     m.rotation.z = -a + Math.PI / 2;
   }
 
@@ -280,6 +286,7 @@ export function createScene(canvas, cfg, { onPick = null } = {}) {
     for (let k = colliders.length - 1; k >= 0; k--) if (colliders[k].dyn) colliders.splice(k, 1);
     houses = list.map((h, i) => buildHouse(h, i));
     buildSeats(list);
+    buildPaths(list.length ? Math.hypot(list[0].x - cfg.center.x, list[0].y - cfg.center.y) * SC : VR);
   }
   function buildHouse(h, i) {
     const g = new THREE.Group();

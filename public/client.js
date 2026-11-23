@@ -254,7 +254,9 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'e' && !e.repeat) {
     const mb = nearMailbox(); if (mb) socket.emit('seer-mailbox', mb.house.i);
     const hs = nearHouseToScratch(); if (hs) socket.emit('scratch', hs.house.i);
+    const wt = witchTarget(); if (wt) socket.emit('witch-house', wt.p.house.i);
   }
+  if (e.key.toLowerCase() === 't' && !e.repeat && canPhone()) socket.emit('phone');
   keys.add(e.key.toLowerCase());
   if (e.key.startsWith('Arrow')) e.preventDefault();
 });
@@ -314,7 +316,7 @@ const amWolf = () => S && S.me.role === 'loup';
 function canMoveClient() {
   if (!S) return false;
   if (S.phase === 'lobby' || S.phase === 'end' || !S.me.alive) return true;
-  if (isNightPhase()) return wolfActive() || seerRoaming();
+  if (isNightPhase()) return wolfActive() || seerRoaming() || witchRoaming();
   if (S.phase === 'vote') return false; // on ne quitte pas le cercle du conseil
   return true;
 }
@@ -346,8 +348,27 @@ function nearMailbox() {
   return best;
 }
 // Voyante encore dehors (avant ou juste après avoir lu une boîte aux lettres)
+// Sorcière dehors pendant son tour
+const witchRoaming = () => S && S.phase === 'witch' && S.me.alive && S.me.role === 'sorciere' && S.witch && !S.witch.done;
+// maison la plus proche où la Sorcière peut agir, et l'action possible
+function witchTarget() {
+  if (!witchRoaming()) return null;
+  let best = null, bd = 115;
+  for (const p of S.players) {
+    if (!p.house || !p.alive) continue;
+    const d = Math.hypot(p.house.x - me.x, p.house.y - me.y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  if (!best) return null;
+  const scratched = (S.scratched || []).includes(best.house.i), pot = S.witch.potions;
+  if (scratched && pot.life) return { p: best, act: 'save' };
+  if (!scratched && best.id !== myId && pot.death) return { p: best, act: 'kill' };
+  return null;
+}
+// amoureux : téléphone (touche T)
+const canPhone = () => S && isNightPhase() && S.me.alive && S.me.lover && P(S.me.lover)?.alive;
 function seerOutside() {
-  if (!S || !isNightPhase() || !S.me.alive || S.me.role !== 'voyante') return false;
+  if (!S || !isNightPhase() || !S.me.alive || !['voyante', 'sorciere'].includes(S.me.role)) return false;
   const h = myHouse(); return !!h && Math.hypot(me.x - h.x, me.y - h.y) > 62;
 }
 function roleText(p) {
@@ -444,16 +465,13 @@ function renderPanel() {
     } else h += `<h4>💤 Vous dormez</h4><p>Les créatures de la nuit s'agitent… Vous ne pouvez ni bouger ni parler.</p>`;
   } else if (ph === 'witch') {
     if (S.witch && S.me.alive) {
-      const w = S.witch, v = w.victim && P(w.victim);
-      if (w.done) h += `<h4>🧪 C'est fait</h4><p class="done">Vous vous rendormez.</p>`;
-      else {
-        h += `<h4>🧪 Sorcière, réveillez-vous</h4><p>${v ? `Les loups ont attaqué <b>${esc(v.name)}</b>.` : 'Les loups n\'ont attaqué personne.'}</p>`;
-        if (v && w.potions.life) h += `<button data-act="w-save" class="${witchSel.save ? 'sel' : ''}" style="width:100%">💚 Potion de vie : sauver ${esc(v.name)}</button>`;
-        else h += `<p><i>${w.potions.life ? '' : 'Potion de vie déjà utilisée.'}</i></p>`;
-        if (w.potions.death) h += `<p>☠️ Potion de mort (optionnel) :</p>${targetBtns(others, 'w-kill', { sel: p => witchSel.kill === p.id })}`;
-        else h += '<p><i>Potion de mort déjà utilisée.</i></p>';
-        h += `<button class="primary" data-act="w-ok" style="width:100%;margin-top:8px">Valider</button>`;
-      }
+      const w = S.witch;
+      if (w.done) h += `<h4>🧪 C'est fait</h4><p class="done">Vous rentrez dormir.</p>`;
+      else h += `<h4>🧪 Sorcière, sortez !</h4><p>Sortez de chez vous et trouvez la <b>maison griffée</b> par les loups. Devant une maison, appuyez sur <b>E</b> :</p>
+        <p>${w.potions.life ? '💚 Devant la maison griffée : <b>potion de vie</b>, vous sauvez la victime.' : '<i>Potion de vie déjà utilisée.</i>'}</p>
+        <p>${w.potions.death ? '☠️ Devant une autre maison : <b>potion de mort</b>, son habitant meurt en plus de la victime des loups.' : '<i>Potion de mort déjà utilisée.</i>'}</p>
+        <p>Une seule action par nuit.</p>
+        <button data-act="w-skip" style="width:100%">Ne rien faire et rentrer dormir</button>`;
     } else if (!S.me.alive) h += `<h4>🧪 La sorcière se réveille</h4><p>Victime des loups : ${esc(P(S.wolfVictim)?.name || '?')}</p>${wolfVotesHtml()}`;
     else if (S.me.role === 'petitefille') h += girlPanel();
     else h += `<h4>💤 Vous dormez</h4><p>La sorcière prépare ses potions…</p>`;
@@ -479,6 +497,12 @@ function renderPanel() {
     const W = { village: '🏡 Victoire du village !', loups: '🐺 Victoire des loups-garous !', amoureux: '💘 Victoire des amoureux !', personne: '☠️ Aucun survivant' };
     h += `<h4>${W[S.winner] || 'Fin'}</h4><p>Tous les rôles sont révélés dans la liste.</p>`;
     if (isHost) h += `<button class="primary" data-act="restart" style="width:100%">🔁 Retour à la salle d'attente</button>`;
+  }
+  // téléphone des amoureux, la nuit
+  if (canPhone()) {
+    const l = P(S.me.lover);
+    h += `<div class="phone"><b>📞 Téléphone</b><p>${S.call ? `En ligne avec <b>${esc(l.name)}</b> : parlez dans le chat ou au micro. ⚠ Ceux qui passent près de votre maison vous entendent !` : `Appelez ${esc(l.name)} pour vous parler cette nuit.`}</p>
+      <button data-act="phone" class="${S.call ? 'sel' : ''}" style="width:100%">${S.call ? '📵 Raccrocher (T)' : '📞 Appeler (T)'}</button></div>`;
   }
   if (isHost && ph !== 'lobby' && ph !== 'end') h += `<button class="skip" data-act="skip" style="width:100%">⏭ (Hôte) Terminer cette phase maintenant</button>`;
 
@@ -528,6 +552,8 @@ $('#panelBody').addEventListener('click', e => {
     case 'w-save': witchSel.save = !witchSel.save; renderPanel(); break;
     case 'w-kill': witchSel.kill = witchSel.kill === id ? null : id; renderPanel(); break;
     case 'w-ok': socket.emit('witch', witchSel); break;
+    case 'w-skip': socket.emit('witch-skip'); break;
+    case 'phone': socket.emit('phone'); break;
   }
 });
 $('#panelBody').addEventListener('change', e => {
@@ -589,8 +615,10 @@ function frame(t) {
   let msg = '';
   if (wolfActive()) { const hs = nearHouseToScratch(); msg = hs ? `🐾 E : griffer la maison de ${hs.name}` : ''; }
   else if (isNightPhase() && S.me.alive) {
-    if (seerRoaming()) { const mb = nearMailbox(); msg = mb ? `📬 E : ouvrir la boîte aux lettres de ${mb.name}` : '🔮 Allez jusqu\'à une boîte aux lettres'; }
+    if (witchRoaming()) { const wt = witchTarget(); msg = wt ? (wt.act === 'save' ? `💚 E : sauver ${wt.p.name} (potion de vie)` : `☠️ E : empoisonner ${wt.p.name} (potion de mort)`) : '🧪 Trouvez la maison griffée…'; }
+    else if (seerRoaming()) { const mb = nearMailbox(); msg = mb ? `📬 E : ouvrir la boîte aux lettres de ${mb.name}` : '🔮 Allez jusqu\'à une boîte aux lettres'; }
     else if (seerOutside()) msg = '🔮 Vous rentrez dormir…';
+    else if (canPhone() && !(isGirlNight() && S.peek)) msg = S.call ? `📞 En ligne avec ${P(S.me.lover).name}…` : `💤 Vous dormez… (📞 T : appeler ${P(S.me.lover).name})`;
     else msg = isGirlNight() && S.step === 'loups' ? (S.spotted ? '😱 Repérée ! Rideaux fermés.' : S.peek ? (voice.danger ? '⚠ Un loup est tout près !' : '') : '👧 Q ou D : entrouvrir le rideau gauche ou droit')
       : needsAction() ? '🌙 C\'est votre tour : agissez ! →' : `💤 Vous dormez… (tour de ${STEP_NAMES[S.step] || 'la Sorcière'})`;
   }
