@@ -121,8 +121,12 @@ fermées, réseaux d'entreprise ou d'école), la connexion directe est impossibl
 **serveur relais TURN** (par exemple l'offre gratuite de https://www.metered.ca/stun-turn).
 Renseignez-le dans les variables d'environnement (sur Render : *Environment*) :
 
-- `TURN_URL` : par exemple `turn:global.relay.metered.ca:80,turns:global.relay.metered.ca:443?transport=tcp`
-- `TURN_USER` et `TURN_PASS` : les identifiants fournis
+- `TURN_USER` et `TURN_PASS` : le nom d'utilisateur et le mot de passe du relais Metered
+  (tableau de bord Metered → *TURN Server* → identifiants).
+- `TURN_URL` (optionnel) : seulement pour un autre fournisseur que Metered, adresses séparées
+  par des virgules.
+
+Au démarrage, le journal du serveur affiche « Relais vocal (TURN) : activé ».
 
 ## Options
 

@@ -84,7 +84,13 @@ app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'th
 const io = new Server({ maxHttpBufferSize: 2e5, pingInterval: 25000, pingTimeout: 60000 });
 // serveurs pour la voix (WebRTC) : STUN public + relais TURN optionnel (variables TURN_URL, TURN_USER, TURN_PASS)
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-if (process.env.TURN_URL) ICE_SERVERS.push({ urls: process.env.TURN_URL.split(',').map(u => u.trim()), username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' });
+// Relais Metered par défaut : il suffit de renseigner TURN_USER et TURN_PASS (TURN_URL est optionnel)
+const METERED_URLS = ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp',
+  'turn:global.relay.metered.ca:443', 'turns:global.relay.metered.ca:443?transport=tcp'];
+if (process.env.TURN_USER && process.env.TURN_PASS) {
+  const urls = process.env.TURN_URL ? process.env.TURN_URL.split(',').map(u => u.trim()).filter(Boolean) : METERED_URLS;
+  ICE_SERVERS.push({ urls, username: process.env.TURN_USER.trim(), credential: process.env.TURN_PASS.trim() });
+}
 const httpServer = http.createServer(app);
 io.attach(httpServer);
 
@@ -1070,6 +1076,7 @@ async function startHttps() {
 (async () => {
   accounts = await openAccounts();
   console.log(`  Comptes joueurs : ${accounts.kind}`);
+  console.log(`  Relais vocal (TURN) : ${ICE_SERVERS.length > 1 ? 'activé' : 'non configuré (TURN_USER / TURN_PASS)'}`);
   if (!process.env.DATABASE_URL && process.env.RENDER) console.warn('  ⚠ Pas de DATABASE_URL : les comptes seront effacés à chaque redémarrage du serveur !');
   httpServer.listen(PORT, onListen);
 })().catch(e => { console.error('Impossible d\'ouvrir la base des comptes :', e.message); process.exit(1); });
