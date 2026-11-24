@@ -79,7 +79,12 @@ const COLORS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4'
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three', 'build')));
-const io = new Server({ maxHttpBufferSize: 2e5 });
+// tolérance plus longue : un navigateur très occupé (3D, vocal, onglet en arrière-plan)
+// ne doit pas être déconnecté pour un « ping » en retard
+const io = new Server({ maxHttpBufferSize: 2e5, pingInterval: 25000, pingTimeout: 60000 });
+// serveurs pour la voix (WebRTC) : STUN public + relais TURN optionnel (variables TURN_URL, TURN_USER, TURN_PASS)
+const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+if (process.env.TURN_URL) ICE_SERVERS.push({ urls: process.env.TURN_URL.split(',').map(u => u.trim()), username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' });
 const httpServer = http.createServer(app);
 io.attach(httpServer);
 
@@ -552,7 +557,7 @@ function attach(socket, joinData) {
     me.connected = true;
     me.voice = false;
     if (!user.bot && (!game.hostId || !get(game.hostId)?.connected || get(game.hostId)?.bot)) game.hostId = id;
-    socket.emit('welcome', { id, room: code, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
+    socket.emit('welcome', { id, room: code, iceServers: ICE_SERVERS, roleInfo: ROLE_INFO, world: WORLD, center: CENTER, den: DEN,
       ring: HOUSE_RING, houses: game.houses, hearRadius: HEAR_RADIUS, councilRadius: COUNCIL_RADIUS, peek: { range: PEEK_RANGE, half: PEEK_HALF_ANGLE } });
     socket.emit('teleport', { x: me.x, y: me.y });
     broadcastState();

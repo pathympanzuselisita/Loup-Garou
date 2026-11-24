@@ -119,7 +119,11 @@ $('#roomBtn').onclick = async () => {
   setTimeout(() => { $('#roomBtn').textContent = `🔑 Salon ${roomCode} · 📋 Copier le lien`; }, 2000);
 };
 $('#leaveBtn').onclick = () => { if (confirm('Quitter ce salon ?')) location.href = location.pathname; };
+// indicateur de connexion
+socket.on('disconnect', () => { if (joined) { $('#netLbl').hidden = false; } });
 socket.on('welcome', cfg => {
+  $('#netLbl').hidden = true;
+  setTimeout(rejoinVoice, 300);
   CFG = cfg;
   roomCode = cfg.room;
   history.replaceState(null, '', `?salon=${roomCode}`);
@@ -131,7 +135,7 @@ socket.on('welcome', cfg => {
     // pendant le vote : cliquer sur un joueur = voter contre lui
     if (S && S.phase === 'vote' && S.me.alive && id !== myId && P(id)?.alive) socket.emit('vote', id);
   } });
-  window.dbg = { get S() { return S; }, me, voice, get visible() { return visible; }, emit: (...a) => socket.emit(...a), get scene() { return scene3d; } };
+  window.dbg = { get S() { return S; }, me, voice, get visible() { return visible; }, emit: (...a) => socket.emit(...a), get scene() { return scene3d; }, reconnect: () => { socket.disconnect(); setTimeout(() => socket.connect(), 1500); } };
 });
 socket.on('teleport', p => {
   me.x = p.x; me.y = p.y;
@@ -205,6 +209,7 @@ const chatIn = $('#chatIn');
 chatIn.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     const t = chatIn.value.trim();
+    if (t && !socket.connected) { addLog('🔌 Connexion perdue : message non envoyé, réessayez dans un instant.', 'sys warnm'); return; }
     if (t) socket.emit('chat', t);
     chatIn.value = '';
     chatIn.blur();
@@ -750,7 +755,7 @@ async function buildDisguise(stream) {
     voice.wolfTrack = dest.stream.getAudioTracks()[0];
   } catch (e) { console.warn('déformation indisponible', e); }
 }
-const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const ICE_DEFAULT = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 $('#voiceBtn').onclick = async () => {
   if (voice.on) return;
@@ -776,11 +781,11 @@ $('#muteBtn').onclick = () => {
   $('#muteBtn').textContent = voice.muted ? '🔇 Micro coupé' : '🔊 Micro ouvert';
   $('#muteBtn').classList.toggle('off', voice.muted);
 };
-socket.on('connect', () => {
-  // reconnexion : on reconstruit le maillage
+// le vocal est (re)branché une fois le salon rejoint (voir 'welcome'), jamais avant
+function rejoinVoice() {
   for (const id of [...voice.peers.keys()]) closePeer(id);
-  if (voice.on) setTimeout(() => socket.emit('voice-join'), 500);
-});
+  if (voice.on) socket.emit('voice-join');
+}
 
 function analyser(stream) {
   try {
@@ -799,7 +804,7 @@ function level(a) {
 
 function createPeer(id, initiator) {
   closePeer(id);
-  const pc = new RTCPeerConnection(ICE);
+  const pc = new RTCPeerConnection(CFG && CFG.iceServers ? { iceServers: CFG.iceServers } : ICE_DEFAULT);
   const audio = document.createElement('audio');
   audio.autoplay = true; audio.playsInline = true; audio.volume = 0;
   document.body.appendChild(audio);

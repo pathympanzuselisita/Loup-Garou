@@ -114,6 +114,16 @@ qu'eux ; un couple d'amoureux s'il est seul survivant.
 L'hôte (👑, premier connecté) règle le nombre de loups, les rôles et les chronos, et peut
 écourter une phase avec le bouton « Terminer cette phase ».
 
+## Vocal entre réseaux différents (TURN)
+
+Le vocal passe directement d'un joueur à l'autre (WebRTC). Entre certains réseaux (4G, box très
+fermées, réseaux d'entreprise ou d'école), la connexion directe est impossible : il faut alors un
+**serveur relais TURN** (par exemple l'offre gratuite de https://www.metered.ca/stun-turn).
+Renseignez-le dans les variables d'environnement (sur Render : *Environment*) :
+
+- `TURN_URL` : par exemple `turn:global.relay.metered.ca:80,turns:global.relay.metered.ca:443?transport=tcp`
+- `TURN_USER` et `TURN_PASS` : les identifiants fournis
+
 ## Options
 
 Le rendu 3D utilise Three.js (inclus, fonctionne sans Internet). Une carte graphique récente
